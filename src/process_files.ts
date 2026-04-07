@@ -21,11 +21,15 @@ export async function processFiles(files: Files, settings: Settings) {
       ? path.join(__dirname, "../tmp_for_upload")
       : settings.outputDest || "";
 
-  const ops: any[] = [];
   const createdFiles: string[] = [];
+  const resizeOperations: Promise<void>[] = [];
 
-  files.forEach((file: any) => {
-    Object.keys(sizes).forEach((alias: string) => {
+  // Process each file
+  const filesArray = Array.isArray(files) ? files : [files];
+
+  for (const file of filesArray) {
+    // Process each size for the current file
+    for (const [alias, size] of Object.entries(sizes)) {
       const newFileName = `${uuidv4().replace(
         /-/g,
         "",
@@ -33,36 +37,37 @@ export async function processFiles(files: Files, settings: Settings) {
 
       createdFiles.push(newFileName);
 
-      ops.push(
-        sharp(file)
-          .resize({
-            width: sizes[alias as keyof Sizes]?.width,
-            height: sizes[alias as keyof Sizes]?.height,
-          })
-          .toFile(path.join(outputDest, newFileName))
-          .then(() => {
-            if (settings.storage === "s3" && process.env.NODE_ENV !== "test") {
-              ops.push(
-                uploadFile(
-                  settings,
-                  path.join(outputDest, newFileName),
-                  newFileName,
-                ),
-              );
-            }
-          }),
-      );
-    });
-  });
+      // Create resize operation
+      const resizePromise = sharp(file)
+        .resize({
+          width: size?.width,
+          height: size?.height,
+        })
+        .toFile(path.join(outputDest, newFileName))
+        .then(() => {
+          // If S3 storage is configured and not in test environment, upload the file
+          if (settings.storage === "s3" && process.env.NODE_ENV !== "test") {
+            return uploadFile(
+              settings,
+              path.join(outputDest, newFileName),
+              newFileName,
+            );
+          }
+          return Promise.resolve();
+        });
+
+      resizeOperations.push(resizePromise);
+    }
+  }
 
   try {
-    await Promise.all(ops);
+    await Promise.all(resizeOperations);
 
     return {
       createdFiles,
     };
-  } catch (e) {
-    console.error(e);
+  } catch (error) {
+    console.error("Photonify: Error processing images", error);
     throw new Error("Photonify: Error processing images");
   }
 }
