@@ -1,11 +1,11 @@
-import fs from "fs";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { Settings } from "@app/types";
+import fs from 'fs';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { Settings } from '@app/types';
 
 export async function uploadFile(
   settings: Settings,
   pathToFile: string,
-  newFileName: string,
+  newFileName: string
 ) {
   const file = fs.readFileSync(pathToFile);
 
@@ -25,7 +25,7 @@ export async function uploadFile(
 
     console.log(`Photonify S3 Upload: ${newFileName}`);
   } catch (err) {
-    console.error("Photonify: S3 error");
+    console.error('Photonify: S3 error');
     console.error(err);
   }
 }

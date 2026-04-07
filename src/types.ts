@@ -19,7 +19,7 @@ export type Sizes = {
 
 export type Settings = {
   outputDest?: string;
-  storage?: "local" | "s3";
+  storage?: 'local' | 's3';
   outputFormat?: SupportedFileTypes;
   sizes?: Sizes;
   s3Config?: any;
@@ -28,4 +28,4 @@ export type Settings = {
 
 export type Files = Buffer | Buffer[];
 
-export type SupportedFileTypes = "jpg" | "png" | "tiff";
+export type SupportedFileTypes = 'jpg' | 'png' | 'tiff';

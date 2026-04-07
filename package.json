@@ -10,7 +10,8 @@
   "types": "./dist/src/index.d.ts",
   "scripts": {
     "test": "NODE_ENV=test mocha",
-    "build": "tsc"
+    "build": "tsc",
+    "prettier": "prettier --write \"**/*.{ts,js,tsx,jsx,json,css,scss,md}\""
   },
   "author": "Arun Sood",
   "license": "ISC",
@@ -21,6 +22,7 @@
     "@types/uuid": "^9.0.7",
     "chai": "^4.3.7",
     "mocha": "^10.2.0",
+    "prettier": "^3.8.1",
     "ts-node": "^10.9.2",
     "typescript": "5.3.3"
   },
