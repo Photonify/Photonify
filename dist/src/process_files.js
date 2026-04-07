@@ -16,8 +16,8 @@ exports.processFiles = void 0;
 const path_1 = __importDefault(require("path"));
 const sharp_1 = __importDefault(require("sharp"));
 const uuid_1 = require("uuid");
-const constants_1 = require("./constants");
-const upload_file_1 = require("./upload_file");
+const constants_1 = require("@app/constants");
+const upload_file_1 = require("@app/upload_file");
 function processFiles(files, settings) {
     return __awaiter(this, void 0, void 0, function* () {
         // Fail early if S3 is selected but not configured

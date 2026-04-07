@@ -9,7 +9,10 @@
     "strict": true,
     "skipLibCheck": true,
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "paths": {
+      "@app/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts", "tmp_for_upload/**/*.ts"]
 }

@@ -1,14 +1,14 @@
 import { DeleteObjectsCommand, S3Client } from "@aws-sdk/client-s3";
 
-import { Settings } from "./types";
+import { Settings } from "@app/types";
 
 export async function removeFiles(
   fileNames: string[],
-  settings: Partial<Settings>
+  settings: Partial<Settings>,
 ) {
   if (settings.storage !== "s3" || !settings.s3Config || !settings.s3Bucket) {
     throw new Error(
-      "Photonify: Storage must be set to S3 and have s3Config and s3Bucket configured."
+      "Photonify: Storage must be set to S3 and have s3Config and s3Bucket configured.",
     );
   }
 

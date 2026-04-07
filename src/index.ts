@@ -1,2 +1,2 @@
-export { processFiles } from "./process_files";
-export { removeFiles } from "./remove_files";
+export { processFiles } from "@app/process_files";
+export { removeFiles } from "@app/remove_files";
