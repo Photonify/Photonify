@@ -14,7 +14,7 @@
     "prettier": "prettier --write \"**/*.{ts,js,tsx,jsx,json,css,scss,md}\"",
     "lint": "eslint \"**/*.ts\""
   },
-  "author": "Arun Sood",
+  "author": "Aaron Sood",
   "license": "ISC",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
