@@ -22,7 +22,13 @@ export type Settings = {
   storage?: 'local' | 's3';
   outputFormat?: SupportedFileTypes;
   sizes?: Sizes;
-  s3Config?: any;
+  s3Config?: {
+    region?: string;
+    credentials?: {
+      accessKeyId: string;
+      secretAccessKey: string;
+    };
+  };
   s3Bucket?: string;
 };
 

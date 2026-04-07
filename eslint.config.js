@@ -14,6 +14,6 @@ module.exports = [
       '@typescript-eslint/no-unused-vars': 'error',
       '@typescript-eslint/no-explicit-any': 'warn',
     },
-    ignores: ['dist/', 'node_modules/', '*.d.ts'],
+    ignores: ['dist/', 'node_modules/', '**/*.d.ts'],
   },
 ];
