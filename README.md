@@ -237,8 +237,7 @@ using [Multer](https://github.com/expressjs/multer) to access multipart file dat
 
 ## Changelog
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history, including the 3.x → 4.x
-breaking changes.
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ## License
 
