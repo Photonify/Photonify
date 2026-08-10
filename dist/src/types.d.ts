@@ -1,4 +1,5 @@
 /// <reference types="node" />
+/// <reference types="node" />
 export type Sizes = {
     xl?: {
         width: number;
