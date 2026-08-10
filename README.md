@@ -5,9 +5,19 @@
 [![npm downloads](https://img.shields.io/npm/dm/photonify.svg)](https://www.npmjs.com/package/photonify)
 [![license](https://img.shields.io/npm/l/photonify.svg)](./LICENSE.md)
 
-Photonify takes image buffers, resizes them into multiple sizes with
-[sharp](https://github.com/lovell/sharp), and stores the results on the local
-filesystem or in AWS S3. Each output file is given a unique, fingerprinted name.
+Photonify processes image buffers into multiple resized variants in a single
+call. Given one or more input buffers and a set of named sizes, it resizes each
+image to every size, encodes the result to `jpg`, `png`, or `tiff`, and writes
+the output to the local filesystem or uploads it directly to AWS S3. Each output
+is named `<uuid>-<sizeAlias>.<format>`, so filenames are unique across runs and
+safe to write without overwrite checks.
+
+Resizing is powered by [sharp](https://github.com/lovell/sharp) and runs through
+a concurrency-limited worker pool over the flattened (image × size) task list.
+S3 uploads stream resized buffers directly to the bucket with no temp files, and
+a failed run best-effort cleans up any files it already wrote. The full API is
+two functions — `processFiles` and `removeFiles` — and ships with TypeScript
+declarations.
 
 ## Features
 
