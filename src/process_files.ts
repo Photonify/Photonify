@@ -2,9 +2,9 @@ import path from 'path';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 
-import { Settings, Files } from '@app/types';
-import { DEFAULT_SIZES } from '@app/constants';
-import { uploadFile } from '@app/upload_file';
+import { Settings, Files } from './types';
+import { DEFAULT_SIZES } from './constants';
+import { uploadFile } from './upload_file';
 
 export async function processFiles(files: Files, settings: Settings) {
   // Fail early if S3 is selected but not configured

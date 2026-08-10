@@ -1,6 +1,6 @@
 import { DeleteObjectsCommand, S3Client } from '@aws-sdk/client-s3';
 
-import { Settings } from '@app/types';
+import { Settings } from './types';
 
 export async function removeFiles(
   fileNames: string[],

@@ -1,4 +1,4 @@
-import { Settings, Files } from "@app/types";
+import { Settings, Files } from './types';
 export declare function processFiles(files: Files, settings: Settings): Promise<{
     createdFiles: string[];
 }>;

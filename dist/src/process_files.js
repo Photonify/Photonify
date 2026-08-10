@@ -16,48 +16,54 @@ exports.processFiles = void 0;
 const path_1 = __importDefault(require("path"));
 const sharp_1 = __importDefault(require("sharp"));
 const uuid_1 = require("uuid");
-const constants_1 = require("@app/constants");
-const upload_file_1 = require("@app/upload_file");
+const constants_1 = require("./constants");
+const upload_file_1 = require("./upload_file");
 function processFiles(files, settings) {
     return __awaiter(this, void 0, void 0, function* () {
         // Fail early if S3 is selected but not configured
-        if (settings.storage === "s3" && (!settings.s3Config || !settings.s3Bucket)) {
-            throw new Error("Photonify: S3 storage is selected but s3Config or s3Bucket is not set.");
+        if (settings.storage === 's3' && (!settings.s3Config || !settings.s3Bucket)) {
+            throw new Error('Photonify: S3 storage is selected but s3Config or s3Bucket is not set.');
         }
         const sizes = settings.sizes || constants_1.DEFAULT_SIZES;
-        const outputFormat = settings.outputFormat || "jpg";
-        const outputDest = settings.storage === "s3"
-            ? path_1.default.join(__dirname, "../tmp_for_upload")
-            : settings.outputDest || "";
-        const ops = [];
+        const outputFormat = settings.outputFormat || 'jpg';
+        const outputDest = settings.storage === 's3'
+            ? path_1.default.join(__dirname, '../tmp_for_upload')
+            : settings.outputDest || '';
         const createdFiles = [];
-        files.forEach((file) => {
-            Object.keys(sizes).forEach((alias) => {
-                var _a, _b;
-                const newFileName = `${(0, uuid_1.v4)().replace(/-/g, "")}-${alias}.${outputFormat}`;
+        const resizeOperations = [];
+        // Process each file
+        const filesArray = Array.isArray(files) ? files : [files];
+        for (const file of filesArray) {
+            // Process each size for the current file
+            for (const [alias, size] of Object.entries(sizes)) {
+                const newFileName = `${(0, uuid_1.v4)().replace(/-/g, '')}-${alias}.${outputFormat}`;
                 createdFiles.push(newFileName);
-                ops.push((0, sharp_1.default)(file)
+                // Create resize operation
+                const resizePromise = (0, sharp_1.default)(file)
                     .resize({
-                    width: (_a = sizes[alias]) === null || _a === void 0 ? void 0 : _a.width,
-                    height: (_b = sizes[alias]) === null || _b === void 0 ? void 0 : _b.height,
+                    width: size === null || size === void 0 ? void 0 : size.width,
+                    height: size === null || size === void 0 ? void 0 : size.height,
                 })
                     .toFile(path_1.default.join(outputDest, newFileName))
                     .then(() => {
-                    if (settings.storage === "s3" && process.env.NODE_ENV !== "test") {
-                        ops.push((0, upload_file_1.uploadFile)(settings, path_1.default.join(outputDest, newFileName), newFileName));
+                    // If S3 storage is configured and not in test environment, upload the file
+                    if (settings.storage === 's3' && process.env.NODE_ENV !== 'test') {
+                        return (0, upload_file_1.uploadFile)(settings, path_1.default.join(outputDest, newFileName), newFileName);
                     }
-                }));
-            });
-        });
+                    return Promise.resolve();
+                });
+                resizeOperations.push(resizePromise);
+            }
+        }
         try {
-            yield Promise.all(ops);
+            yield Promise.all(resizeOperations);
             return {
                 createdFiles,
             };
         }
-        catch (e) {
-            console.error(e);
-            throw new Error("Photonify: Error processing images");
+        catch (error) {
+            console.error('Photonify: Error processing images', error);
+            throw new Error('Photonify: Error processing images');
         }
     });
 }
