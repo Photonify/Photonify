@@ -19,16 +19,19 @@ yarn add photonify
 ## Usage
 
 - Photonify has a method called `processFiles` that will create four resized photos for you by default. The arguments passed to this method will differ slightly depending on filesystem vs. S3 storage.
+- `processFiles` resolves to `{ createdFiles: string[] }` — the generated filenames (`<uuid>-<sizeAlias>.<format>`).
 - Both examples are below:
 
 #### Filesystem Storage:
 
-Parameters:
+Parameters (second argument, `Settings`):
 
-- File Array: _Buffer[] - Required_
-- outputDest: _String - Required_
-- outputFormat: _String_
-- sizes: _String_
+- `files`: _Buffer | Buffer[] - Required (first argument)_
+- `outputDest`: _string - Required_ — directory to write to (created if missing)
+- `outputFormat`: _'jpg' | 'png' | 'tiff'_ — defaults to `'jpg'`
+- `sizes`: _Record<string, { width?: number; height?: number }>_ — alias → dimensions; defaults to `xl`/`lg`/`md`/`sm`. Provide `width`, `height`, or both (a single dimension preserves aspect ratio)
+- `fit`: _'contain' | 'cover' | 'fill' | 'inside' | 'outside'_ — how images fit the target box; defaults to sharp's `'cover'`
+- `concurrency`: _number_ — max images processed in parallel; defaults to `4`
 
 Example with Custom Sizes:
 
@@ -54,13 +57,16 @@ const result = await processFiles([imageBuffer], {
 
 #### S3 Storage:
 
-Parameters:
+With `storage: 's3'`, resized images are streamed straight to S3 (no local
+staging) with the correct `ContentType` for the output format.
 
-- File Array: _Buffer[] - Required_
-- storage: _String - Required_
-- s3Config: _any - Required_ [details here](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/)
-- s3Bucket: _String - Required_
-- outputFormat: _String_
+Parameters (second argument, `Settings`):
+
+- `files`: _Buffer | Buffer[] - Required (first argument)_
+- `storage`: _'s3' - Required_
+- `s3Config`: _[S3ClientConfig](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) - Required_
+- `s3Bucket`: _string - Required_
+- `outputFormat`, `sizes`, `fit`, `concurrency`: _same as above_
 
 Example:
 
@@ -90,12 +96,14 @@ const result = await processFiles([imageBuffer], {
 
 #### Removing S3 Files:
 
+- `removeFiles` batches deletes automatically (S3 allows up to 1000 keys per request) and throws if S3 reports any per-key failures.
+
 Parameters:
 
-- File Names: _String[] - Required_
-- storage: _String - Required_
-- s3Config: _any - Required_ [details here](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/)
-- s3Bucket: _String - Required_
+- `fileNames`: _string[] - Required_
+- `storage`: _'s3' - Required_
+- `s3Config`: _[S3ClientConfig](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) - Required_
+- `s3Bucket`: _string - Required_
 
 Example:
 
