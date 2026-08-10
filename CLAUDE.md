@@ -13,7 +13,7 @@ The entire public API is two functions re-exported from `src/index.ts`:
 
 ## Commands
 
-Node version is pinned to `20.11.0` (`.nvmrc`); package manager is Yarn (Berry, `nodeLinker: node-modules`).
+Node version is pinned to `22.16.0` (`.nvmrc`); package manager is Yarn (Berry, `nodeLinker: node-modules`). The published package's runtime floor is Node `>=20.9.0` (`engines`); the newer dev pin is required by the ESLint 10 toolchain.
 
 - Build: `yarn build` (cleans `dist/`, then runs `tsc`)
 - Test: `yarn test` (runs Mocha)
