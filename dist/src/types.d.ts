@@ -19,12 +19,18 @@ export type Sizes = {
 };
 export type Settings = {
     outputDest?: string;
-    storage?: "local" | "s3";
+    storage?: 'local' | 's3';
     outputFormat?: SupportedFileTypes;
     sizes?: Sizes;
-    s3Config?: any;
+    s3Config?: {
+        region?: string;
+        credentials?: {
+            accessKeyId: string;
+            secretAccessKey: string;
+        };
+    };
     s3Bucket?: string;
 };
 export type Files = Buffer | Buffer[];
-export type SupportedFileTypes = "jpg" | "png" | "tiff";
+export type SupportedFileTypes = 'jpg' | 'png' | 'tiff';
 //# sourceMappingURL=types.d.ts.map

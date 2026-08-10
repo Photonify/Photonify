@@ -17,22 +17,34 @@ const fs_1 = __importDefault(require("fs"));
 const client_s3_1 = require("@aws-sdk/client-s3");
 function uploadFile(settings, pathToFile, newFileName) {
     return __awaiter(this, void 0, void 0, function* () {
-        const file = fs_1.default.readFileSync(pathToFile);
-        const client = new client_s3_1.S3Client(settings.s3Config);
-        const command = new client_s3_1.PutObjectCommand({
-            Bucket: settings.s3Bucket,
-            Key: newFileName,
-            Body: file,
-        });
+        // Validate inputs
+        if (!settings || !settings.s3Config || !settings.s3Bucket) {
+            throw new Error('Photonify: S3 configuration is missing');
+        }
+        if (!pathToFile || !newFileName) {
+            throw new Error('Photonify: File path or filename is missing');
+        }
         try {
+            // Read file content
+            const file = fs_1.default.readFileSync(pathToFile);
+            // Create S3 client
+            const client = new client_s3_1.S3Client(settings.s3Config);
+            // Create upload command
+            const command = new client_s3_1.PutObjectCommand({
+                Bucket: settings.s3Bucket,
+                Key: newFileName,
+                Body: file,
+            });
+            // Upload file to S3
             yield client.send(command);
             // Delete temp file after upload completes
             fs_1.default.unlinkSync(pathToFile);
             console.log(`Photonify S3 Upload: ${newFileName}`);
         }
         catch (err) {
-            console.error("Photonify: S3 error");
+            console.error('Photonify: S3 upload error');
             console.error(err);
+            throw err; // Re-throw the error so calling code can handle it
         }
     });
 }
