@@ -235,22 +235,9 @@ A working Express example lives at
 [photonify/photonify-express-example](https://github.com/photonify/photonify-express-example),
 using [Multer](https://github.com/expressjs/multer) to access multipart file data.
 
-## Migrating from 3.x to 4.x
+## Changelog
 
-4.0.0 contains breaking changes:
-
-- **`NODE_ENV=test` no longer skips S3 uploads/deletes.** Previously the library
-  silently no-op'd S3 calls under `NODE_ENV=test`, which broke consumers running
-  their app with that env. Mock the S3 client in your tests instead.
-- **`s3Config` is now the AWS SDK's `S3ClientConfig`** (a widening of the old
-  `{ region, credentials }` shape) — existing configs keep working and now
-  accept `endpoint`, `forcePathStyle`, etc.
-- **Node `>=20.9.0` is required.**
-- S3 uploads now go directly to the bucket (no `tmp_for_upload` staging dir) and
-  set `ContentType` automatically.
-
-See the [v4.0.0 release notes](https://github.com/Photonify/Photonify/releases/tag/v4.0.0)
-for the full list.
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ## License
 
