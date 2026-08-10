@@ -14,7 +14,6 @@ const validSettings: Partial<Settings> = {
 
 describe('removeFiles', () => {
   let s3Mock: AwsClientStub<S3Client>;
-  const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     s3Mock = mockClient(S3Client);
@@ -23,7 +22,6 @@ describe('removeFiles', () => {
 
   afterEach(() => {
     s3Mock.restore();
-    process.env.NODE_ENV = originalNodeEnv;
   });
 
   describe('validation', () => {
@@ -57,19 +55,7 @@ describe('removeFiles', () => {
     });
   });
 
-  describe('test environment', () => {
-    it('skips the S3 delete when NODE_ENV=test', async () => {
-      process.env.NODE_ENV = 'test';
-      await removeFiles(['a.jpg', 'b.jpg'], validSettings);
-      expect(s3Mock.commandCalls(DeleteObjectsCommand)).to.have.lengthOf(0);
-    });
-  });
-
   describe('s3 delete', () => {
-    beforeEach(() => {
-      process.env.NODE_ENV = 'production';
-    });
-
     it('sends a DeleteObjects request with the correct bucket and keys', async () => {
       await removeFiles(['a.jpg', 'b.jpg', 'c.jpg'], validSettings);
 
@@ -84,7 +70,29 @@ describe('removeFiles', () => {
       ]);
     });
 
-    it('wraps and rethrows S3 errors', async () => {
+    it('batches deletes into chunks of 1000 keys', async () => {
+      const keys = Array.from({ length: 2500 }, (_, i) => `file-${i}.jpg`);
+
+      await removeFiles(keys, validSettings);
+
+      const calls = s3Mock.commandCalls(DeleteObjectsCommand);
+      expect(calls).to.have.lengthOf(3); // 1000 + 1000 + 500
+      expect(calls[0].args[0].input.Delete?.Objects).to.have.lengthOf(1000);
+      expect(calls[2].args[0].input.Delete?.Objects).to.have.lengthOf(500);
+    });
+
+    it('throws when the response reports per-key errors', async () => {
+      s3Mock.on(DeleteObjectsCommand).resolves({
+        Errors: [{ Key: 'a.jpg', Message: 'AccessDenied' }],
+      });
+
+      await assertRejects(
+        removeFiles(['a.jpg'], validSettings),
+        'S3 delete failed for - a.jpg (AccessDenied)'
+      );
+    });
+
+    it('wraps and rethrows transport errors', async () => {
       s3Mock.on(DeleteObjectsCommand).rejects(new Error('access denied'));
       await assertRejects(
         removeFiles(['a.jpg'], validSettings),

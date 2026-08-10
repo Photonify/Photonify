@@ -2,10 +2,7 @@ import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
-import {
-  mockClient,
-  AwsClientStub,
-} from 'aws-sdk-client-mock';
+import { mockClient, AwsClientStub } from 'aws-sdk-client-mock';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 import { processFiles } from '../src/index';
@@ -13,14 +10,18 @@ import { assertRejects, cleanGeneratedFiles } from './helpers';
 
 const IMAGES_DIR = path.join(__dirname, 'test_images');
 const LOCAL_DEST = path.join(__dirname, 'tmp_resized_images');
-const S3_STAGING = path.join(__dirname, '../tmp_for_upload');
 
 const readImage = (name: string): Buffer =>
   fs.readFileSync(path.join(IMAGES_DIR, name));
 
+const s3Settings = {
+  storage: 's3' as const,
+  s3Config: { region: 'us-west-1' },
+  s3Bucket: 'photonify',
+};
+
 describe('processFiles', () => {
   let s3Mock: AwsClientStub<S3Client>;
-  const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     s3Mock = mockClient(S3Client);
@@ -29,9 +30,7 @@ describe('processFiles', () => {
 
   afterEach(() => {
     s3Mock.restore();
-    process.env.NODE_ENV = originalNodeEnv;
     cleanGeneratedFiles(LOCAL_DEST);
-    cleanGeneratedFiles(S3_STAGING);
   });
 
   describe('local storage', () => {
@@ -90,6 +89,24 @@ describe('processFiles', () => {
       expect(meta.height).to.equal(250);
     });
 
+    it('preserves aspect ratio when only one dimension is given', async () => {
+      const source = await sharp(readImage('first_image.jpg')).metadata();
+      const result = await processFiles([readImage('first_image.jpg')], {
+        outputDest: LOCAL_DEST,
+        sizes: { w: { width: 300 } },
+      });
+
+      const meta = await sharp(
+        path.join(LOCAL_DEST, result.createdFiles[0])
+      ).metadata();
+      expect(meta.width).to.equal(300);
+      // height scales proportionally rather than being forced
+      const expectedHeight = Math.round(
+        (300 / (source.width as number)) * (source.height as number)
+      );
+      expect(meta.height).to.equal(expectedHeight);
+    });
+
     it('honors a custom output format (png)', async () => {
       const result = await processFiles([readImage('first_image.jpg')], {
         outputDest: LOCAL_DEST,
@@ -102,6 +119,23 @@ describe('processFiles', () => {
         path.join(LOCAL_DEST, result.createdFiles[0])
       ).metadata();
       expect(meta.format).to.equal('png');
+    });
+
+    it('creates the output directory if it does not exist', async () => {
+      const nestedDest = path.join(LOCAL_DEST, 'nested', 'dir');
+      try {
+        const result = await processFiles([readImage('first_image.jpg')], {
+          outputDest: nestedDest,
+          sizes: { sm: { width: 40, height: 40 } },
+        });
+        expect(fs.existsSync(path.join(nestedDest, result.createdFiles[0]))).to
+          .be.true;
+      } finally {
+        fs.rmSync(path.join(LOCAL_DEST, 'nested'), {
+          recursive: true,
+          force: true,
+        });
+      }
     });
 
     it('generates unique filenames across calls', async () => {
@@ -118,6 +152,27 @@ describe('processFiles', () => {
     it('returns an empty list when given no files', async () => {
       const result = await processFiles([], { outputDest: LOCAL_DEST });
       expect(result.createdFiles).to.deep.equal([]);
+    });
+
+    it('cleans up already-written files when a later image fails', async () => {
+      const countFiles = () =>
+        fs.existsSync(LOCAL_DEST) ? fs.readdirSync(LOCAL_DEST).length : 0;
+      const before = countFiles();
+
+      await assertRejects(
+        processFiles(
+          [readImage('first_image.jpg'), Buffer.from('not an image')],
+          {
+            outputDest: LOCAL_DEST,
+            sizes: { sm: { width: 40, height: 40 } },
+            concurrency: 1, // process the valid image first, then fail
+          }
+        ),
+        'Error processing images'
+      );
+
+      // the file written for the first image should have been removed
+      expect(countFiles()).to.equal(before);
     });
   });
 
@@ -142,6 +197,13 @@ describe('processFiles', () => {
       );
     });
 
+    it('rejects when local storage has no outputDest', async () => {
+      await assertRejects(
+        processFiles([readImage('first_image.jpg')], {}),
+        'outputDest is required'
+      );
+    });
+
     it('rejects when the buffer is not a valid image', async () => {
       await assertRejects(
         processFiles([Buffer.from('this is not an image')], {
@@ -150,55 +212,57 @@ describe('processFiles', () => {
         'Error processing images'
       );
     });
+
+    it('rejects an unsupported output format', async () => {
+      await assertRejects(
+        processFiles([readImage('first_image.jpg')], {
+          outputDest: LOCAL_DEST,
+          outputFormat: 'gif' as unknown as 'jpg',
+          sizes: { sm: { width: 40, height: 40 } },
+        }),
+        'Unsupported output format'
+      );
+    });
   });
 
   describe('s3 storage', () => {
-    it('stages files locally and skips upload when NODE_ENV=test', async () => {
-      process.env.NODE_ENV = 'test';
-
+    it('uploads one object per image per size and writes nothing locally', async () => {
       const result = await processFiles([readImage('first_image.jpg')], {
-        storage: 's3',
-        s3Config: { region: 'us-west-1' },
-        s3Bucket: 'photonify',
+        ...s3Settings,
+        sizes: {
+          sm: { width: 80, height: 80 },
+          md: { width: 160, height: 160 },
+        },
       });
 
-      for (const file of result.createdFiles) {
-        expect(fs.existsSync(path.join(S3_STAGING, file))).to.be.true;
-      }
-      expect(s3Mock.commandCalls(PutObjectCommand)).to.have.lengthOf(0);
-    });
-
-    it('uploads to S3 and removes staging files when not in test env', async () => {
-      process.env.NODE_ENV = 'production';
-
-      const result = await processFiles([readImage('first_image.jpg')], {
-        storage: 's3',
-        s3Config: { region: 'us-west-1' },
-        s3Bucket: 'photonify',
-        sizes: { sm: { width: 80, height: 80 }, md: { width: 160, height: 160 } },
-      });
-
-      // one image x two sizes = two uploads
+      expect(result.createdFiles).to.have.lengthOf(2);
       expect(s3Mock.commandCalls(PutObjectCommand)).to.have.lengthOf(2);
-      // staging files are cleaned up after a successful upload
-      for (const file of result.createdFiles) {
-        expect(fs.existsSync(path.join(S3_STAGING, file))).to.be.false;
-      }
     });
 
-    it('uploads each file to the configured bucket', async () => {
-      process.env.NODE_ENV = 'production';
-
+    it('uploads to the configured bucket with the correct key and content type', async () => {
       await processFiles([readImage('first_image.jpg')], {
-        storage: 's3',
-        s3Config: { region: 'us-west-1' },
+        ...s3Settings,
         s3Bucket: 'my-bucket',
+        outputFormat: 'png',
         sizes: { sm: { width: 80, height: 80 } },
       });
 
-      const call = s3Mock.commandCalls(PutObjectCommand)[0];
-      expect(call.args[0].input.Bucket).to.equal('my-bucket');
-      expect(call.args[0].input.Key).to.match(/^[a-f0-9]{32}-sm\.jpg$/);
+      const input = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
+      expect(input.Bucket).to.equal('my-bucket');
+      expect(input.Key).to.match(/^[a-f0-9]{32}-sm\.png$/);
+      expect(input.ContentType).to.equal('image/png');
+      expect(input.Body).to.be.instanceOf(Buffer);
+    });
+
+    it('surfaces upload failures', async () => {
+      s3Mock.on(PutObjectCommand).rejects(new Error('access denied'));
+      await assertRejects(
+        processFiles([readImage('first_image.jpg')], {
+          ...s3Settings,
+          sizes: { sm: { width: 80, height: 80 } },
+        }),
+        'Error processing images'
+      );
     });
   });
 });
