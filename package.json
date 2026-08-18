@@ -3,7 +3,7 @@
   "version": "4.0.1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/photonify/photonify.git"
+    "url": "https://github.com/Photonify/Photonify.git"
   },
   "description": "Photonify is a utility to manage multipart image uploads and automatically process them with fingerprinting and storage.",
   "main": "./dist/src/index.js",
