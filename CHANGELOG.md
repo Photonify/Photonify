@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1]
+
+### Changed
+
+- Reconciled the license to **MIT** across `LICENSE.md`, `package.json`, and the
+  README (metadata previously said ISC); corrected the copyright holder and year.
+- Expanded the README badge block (npm version/downloads, CI, TypeScript, node,
+  license).
+
+### Added
+
+- CI workflow to publish to npm on GitHub Release.
+
 ## [4.0.0]
 
 ### Breaking
@@ -36,5 +49,6 @@ for the full list.
 - Final 3.x release. See the
   [3.x release notes](https://github.com/Photonify/Photonify/releases) for details.
 
+[4.0.1]: https://github.com/Photonify/Photonify/releases/tag/v4.0.1
 [4.0.0]: https://github.com/Photonify/Photonify/releases/tag/v4.0.0
 [3.0.10]: https://github.com/Photonify/Photonify/releases/tag/v3.0.10
