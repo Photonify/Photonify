@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/photonify.svg)](https://www.npmjs.com/package/photonify)
 [![npm downloads](https://img.shields.io/npm/dm/photonify.svg)](https://www.npmjs.com/package/photonify)
-[![CI](https://github.com/photonify/photonify/actions/workflows/ci.yml/badge.svg)](https://github.com/photonify/photonify/actions/workflows/ci.yml)
+[![CI](https://github.com/Photonify/Photonify/actions/workflows/ci.yml/badge.svg)](https://github.com/Photonify/Photonify/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-3178C6.svg)](https://www.typescriptlang.org/)
 [![node](https://img.shields.io/node/v/photonify.svg)](https://nodejs.org/)
 [![license](https://img.shields.io/npm/l/photonify.svg)](./LICENSE.md)
