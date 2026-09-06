@@ -68,7 +68,7 @@ export async function processFiles(
     settings.storage !== 's3'
   ) {
     throw new PhotonifyError(
-      `Photonify: Unknown storage "${inspect(settings.storage)}"; expected 'local' or 's3'.`
+      `Photonify: Unknown storage ${inspect(settings.storage)}; expected 'local' or 's3'.`
     );
   }
 
@@ -98,9 +98,11 @@ export async function processFiles(
   }
 
   const outputFormat: SupportedFileTypes = settings.outputFormat ?? 'jpg';
-  if (!CONTENT_TYPES[outputFormat]) {
+  // hasOwnProperty (not truthiness) so inherited keys like 'toString' or
+  // '__proto__' are rejected instead of passing the check.
+  if (!Object.prototype.hasOwnProperty.call(CONTENT_TYPES, outputFormat)) {
     throw new PhotonifyError(
-      `Photonify: Unsupported output format "${inspect(settings.outputFormat)}"; expected one of ${Object.keys(CONTENT_TYPES).join(', ')}.`
+      `Photonify: Unsupported output format ${inspect(settings.outputFormat)}; expected one of ${Object.keys(CONTENT_TYPES).join(', ')}.`
     );
   }
 
@@ -118,7 +120,7 @@ export async function processFiles(
   filesArray.forEach((file, index) => {
     if (!Buffer.isBuffer(file)) {
       throw new PhotonifyError(
-        `Photonify: files[${index}] is not a Buffer (received ${inspect(file)}).`
+        `Photonify: files[${index}] is not a Buffer (received ${inspect(file, { maxStringLength: 40, depth: 1 })}).`
       );
     }
   });
@@ -135,7 +137,16 @@ export async function processFiles(
   const s3Bucket = settings.s3Bucket as string;
 
   if (!isS3) {
-    await fs.promises.mkdir(outputDest, { recursive: true });
+    try {
+      await fs.promises.mkdir(outputDest, { recursive: true });
+    } catch (error) {
+      // Keep the "every rejection is a PhotonifyError" guarantee: mkdir can
+      // fail with EACCES, ENOTDIR, or EEXIST (outputDest is an existing file).
+      throw new PhotonifyError(
+        `Photonify: Could not create outputDest ${inspect(outputDest)}.`,
+        { cause: error }
+      );
+    }
   }
 
   const client = isS3 ? new S3Client(settings.s3Config ?? {}) : undefined;
@@ -157,7 +168,13 @@ export async function processFiles(
         fit: settings.fit,
         withoutEnlargement: settings.withoutEnlargement,
       })
-      .toFormat(SHARP_FORMATS[outputFormat], settings.formatOptions);
+      // force: true overrides any caller-supplied force so the output is always
+      // re-encoded to outputFormat; force: false would keep the input format
+      // while we still name the file and set the S3 ContentType for outputFormat.
+      .toFormat(SHARP_FORMATS[outputFormat], {
+        ...settings.formatOptions,
+        force: true,
+      });
 
     // Record the destination *before* the write so that a write which fails
     // after partially succeeding (a PutObject whose response is lost after S3

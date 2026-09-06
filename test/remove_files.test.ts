@@ -72,6 +72,7 @@ describe('removeFiles', () => {
       expect(calls).to.have.lengthOf(1);
       const input = calls[0].args[0].input;
       expect(input.Bucket).to.equal('photonify');
+      expect(input.Delete?.Quiet).to.be.true;
       expect(input.Delete?.Objects).to.deep.equal([
         { Key: 'a.jpg' },
         { Key: 'b.jpg' },

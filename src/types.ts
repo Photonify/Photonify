@@ -20,17 +20,20 @@ export type SupportedFileTypes = 'jpg' | 'png' | 'tiff' | 'webp' | 'avif';
 
 /**
  * Encoder options passed straight to sharp's `toFormat(format, options)` for the
- * chosen `outputFormat`. It is the intersection of sharp's per-format option
- * types, so a field only applies when it is meaningful for that format (e.g.
- * `quality` for jpeg/webp/avif, `compressionLevel` for png). Only the options
- * relevant to the active format are read.
+ * chosen `outputFormat` (e.g. `quality` for jpeg/webp/avif, `compressionLevel`
+ * for png). Only the options relevant to the active format are read.
+ *
+ * This is a union of sharp's per-format option types rather than an
+ * intersection: an intersection would collapse fields that differ between
+ * formats (e.g. `bitdepth` is `8|10|12` for avif but `1|2|4` for tiff) to
+ * `never`, making them impossible to set.
  */
-export type FormatOptions = sharp.OutputOptions &
-  sharp.JpegOptions &
-  sharp.PngOptions &
-  sharp.WebpOptions &
-  sharp.AvifOptions &
-  sharp.TiffOptions;
+export type FormatOptions =
+  | sharp.JpegOptions
+  | sharp.PngOptions
+  | sharp.WebpOptions
+  | sharp.AvifOptions
+  | sharp.TiffOptions;
 
 export type Settings = {
   outputDest?: string;

@@ -24,8 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-encoded at full resolution). `concurrency` must be a positive integer or
   `Infinity`; `0`, negatives, and fractions previously clamped to a valid value.
   An unknown `storage` value (e.g. `'gcs'`) now throws instead of silently
-  falling back to local, and non-`Buffer` entries in `files` are rejected up
-  front instead of surfacing as a wrapped sharp error.
+  falling back to local, and non-`Buffer` entries in `files` are now rejected up
+  front. (Previously values that sharp happens to accept — a file-path string or
+  a `Uint8Array` — were passed through and processed; they now throw, since the
+  documented input is `Buffer`.)
 - **`removeFiles` takes a dedicated `RemoveSettings` type** with `storage`,
   `s3Config`, and `s3Bucket` all required, instead of `Partial<Settings>`. The
   runtime guard is unchanged; TypeScript callers passing invalid settings now
@@ -55,9 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Dropped the `uuid` dependency** in favor of the native
   `crypto.randomUUID()`; one fewer runtime dependency.
-- **The S3 rollback is time-bounded (10s)** via `AbortSignal.timeout`, so an S3
-  outage cannot add the AWS SDK's full retry latency before the caller sees the
-  original failure.
+- **The S3 rollback is time-bounded (10s per `DeleteObjects` batch)** via
+  `AbortSignal.timeout`, so an S3 outage cannot add the AWS SDK's full retry
+  latency before the caller sees the original failure.
 - `removeFiles` now sends `DeleteObjects` with `Quiet: true`.
 
 ### Fixed

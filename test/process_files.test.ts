@@ -195,6 +195,23 @@ describe('processFiles', () => {
       expect(lowSize).to.be.lessThan(highSize);
     });
 
+    it('re-encodes to outputFormat even when formatOptions sets force: false', async () => {
+      // A JPEG input with force: false would otherwise stay JPEG while the
+      // filename and (for S3) ContentType claim png. We force re-encoding.
+      const result = await processFiles([readImage('first_image.jpg')], {
+        outputDest: LOCAL_DEST,
+        outputFormat: 'png',
+        formatOptions: { force: false },
+        sizes: { sm: { width: 40, height: 40 } },
+      });
+
+      expect(result.createdFiles[0]).to.match(/\.png$/);
+      const meta = await sharp(
+        path.join(LOCAL_DEST, result.createdFiles[0])
+      ).metadata();
+      expect(meta.format).to.equal('png');
+    });
+
     it('creates the output directory if it does not exist', async () => {
       const nestedDest = path.join(LOCAL_DEST, 'nested', 'dir');
       try {
@@ -383,6 +400,28 @@ describe('processFiles', () => {
       expect(processingError).to.be.instanceOf(PhotonifyError);
     });
 
+    it('wraps a mkdir failure as a PhotonifyError with the OS error as cause', async () => {
+      fs.mkdirSync(LOCAL_DEST, { recursive: true });
+      const filePath = path.join(LOCAL_DEST, 'not-a-directory');
+      fs.writeFileSync(filePath, 'x');
+      try {
+        // outputDest is under an existing *file*, so mkdir -p throws ENOTDIR.
+        const error = await assertRejects(
+          processFiles([readImage('first_image.jpg')], {
+            outputDest: path.join(filePath, 'sub'),
+            sizes: { sm: { width: 40, height: 40 } },
+          }),
+          'Could not create outputDest'
+        );
+        expect(error).to.be.instanceOf(PhotonifyError);
+        expect((error as Error & { cause?: unknown }).cause).to.be.instanceOf(
+          Error
+        );
+      } finally {
+        fs.rmSync(filePath, { force: true });
+      }
+    });
+
     it('rejects a size alias that could escape the output directory', async () => {
       for (const alias of ['../../escaped', 'a/b', 'a\\b', 'with space', '']) {
         await assertRejects(
@@ -542,6 +581,11 @@ describe('processFiles', () => {
       const input = deletes[0].args[0].input;
       expect(input.Bucket).to.equal(s3Settings.s3Bucket);
       expect(input.Delete?.Quiet).to.be.true;
+      // The rollback delete is time-bounded via an abort signal. (The mock
+      // types call args as a 1-tuple, so reach the options arg via a cast.)
+      const sendOptions = (deletes[0].args as unknown[])[1] as
+        { abortSignal?: unknown } | undefined;
+      expect(sendOptions?.abortSignal).to.be.instanceOf(AbortSignal);
       const uploadedKeys = s3Mock
         .commandCalls(PutObjectCommand)
         .map(call => call.args[0].input.Key);

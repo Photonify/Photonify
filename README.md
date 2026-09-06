@@ -82,18 +82,18 @@ Resizes each input image into every configured size and stores the results.
 
 #### `Settings`
 
-| Option               | Type                                                                                  | Default         | Notes                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------ |
-| `storage`            | `'local' \| 's3'`                                                                     | `'local'`       | Where output is written. Any other value is rejected up front.                                         |
-| `outputDest`         | `string`                                                                              | —               | **Required for local storage.** Directory to write to; created if it doesn't exist.                    |
-| `outputFormat`       | `'jpg' \| 'png' \| 'tiff' \| 'webp' \| 'avif'`                                        | `'jpg'`         | Output encoding and file extension.                                                                    |
-| `sizes`              | `Record<string, { width?: number; height?: number }>`                                 | `DEFAULT_SIZES` | Map of alias → dimensions. See [Sizes](#sizes) for alias and dimension rules.                          |
-| `fit`                | `'contain' \| 'cover' \| 'fill' \| 'inside' \| 'outside'`                             | `'cover'`       | How images fit the target box. See [sharp resize](https://sharp.pixelplumbing.com/api-resize).         |
-| `withoutEnlargement` | `boolean`                                                                             | `false`         | When true, images smaller than a target size are left as-is instead of being upscaled to fill the box. |
-| `formatOptions`      | `FormatOptions`                                                                       | —               | Encoder options passed to sharp for the chosen `outputFormat`, e.g. `{ quality: 90 }`.                 |
-| `concurrency`        | `number`                                                                              | `4`             | Max _(image × size)_ tasks in parallel. A positive integer, or `Infinity` for no limit.                |
-| `s3Config`           | [`S3ClientConfig`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) | —               | **Required for S3 storage.** Passed straight to the AWS SDK `S3Client`.                                |
-| `s3Bucket`           | `string`                                                                              | —               | **Required for S3 storage.** Destination bucket.                                                       |
+| Option               | Type                                                                                  | Default             | Notes                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `storage`            | `'local' \| 's3'`                                                                     | `'local'`           | Where output is written. Any other value is rejected up front.                                         |
+| `outputDest`         | `string`                                                                              | —                   | **Required for local storage.** Directory to write to; created if it doesn't exist.                    |
+| `outputFormat`       | `'jpg' \| 'png' \| 'tiff' \| 'webp' \| 'avif'`                                        | `'jpg'`             | Output encoding and file extension.                                                                    |
+| `sizes`              | `Record<string, { width?: number; height?: number }>`                                 | 4 sizes (see below) | Map of alias → dimensions. See [Sizes](#sizes) for alias and dimension rules.                          |
+| `fit`                | `'contain' \| 'cover' \| 'fill' \| 'inside' \| 'outside'`                             | `'cover'`           | How images fit the target box. See [sharp resize](https://sharp.pixelplumbing.com/api-resize).         |
+| `withoutEnlargement` | `boolean`                                                                             | `false`             | When true, images smaller than a target size are left as-is instead of being upscaled to fill the box. |
+| `formatOptions`      | `FormatOptions`                                                                       | —                   | Encoder options passed to sharp for the chosen `outputFormat`, e.g. `{ quality: 90 }`.                 |
+| `concurrency`        | `number`                                                                              | `4`                 | Max _(image × size)_ tasks in parallel. A positive integer, or `Infinity` for no limit.                |
+| `s3Config`           | [`S3ClientConfig`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) | —                   | **Required for S3 storage.** Passed straight to the AWS SDK `S3Client`.                                |
+| `s3Bucket`           | `string`                                                                              | —                   | **Required for S3 storage.** Destination bucket.                                                       |
 
 #### Sizes
 
@@ -226,8 +226,9 @@ On a processing failure, `processFiles` stops scheduling new work, waits for
 every in-flight task to finish, then best-effort removes everything the call
 produced (local files are unlinked; S3 objects are deleted with
 `DeleteObjects`). Cleanup failures are ignored, and the S3 rollback is
-time-bounded (10s) so an S3 outage cannot add the AWS SDK's full retry latency
-before the caller sees the original failure. It then rejects with a
+time-bounded (10s per `DeleteObjects` batch) so an S3 outage cannot add the AWS
+SDK's full retry latency before the caller sees the original failure. It then
+rejects with a
 `Photonify: Error processing images` error whose `cause` is the underlying
 error:
 
