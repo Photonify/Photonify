@@ -114,9 +114,7 @@ describe('processFiles', () => {
       ).metadata();
       expect(meta.width).to.equal(300);
       // height scales proportionally rather than being forced
-      const expectedHeight = Math.round(
-        (300 / (source.width as number)) * (source.height as number)
-      );
+      const expectedHeight = Math.round((300 / source.width) * source.height);
       expect(meta.height).to.equal(expectedHeight);
     });
 

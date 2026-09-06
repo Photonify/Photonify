@@ -1,19 +1,37 @@
-// Minimal ESLint config for ESLint v10
-module.exports = [
+// ESLint v10 flat config with type-aware linting.
+const js = require('@eslint/js');
+const tseslint = require('typescript-eslint');
+
+module.exports = tseslint.config(
+  // Global ignores (must be its own object with only `ignores` to be global).
   {
-    files: ['**/*.ts'],
+    ignores: ['dist/', 'node_modules/', 'coverage/', '**/*.d.ts'],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  {
     languageOptions: {
-      parser: require('@typescript-eslint/parser'),
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-    },
-    plugins: {
-      '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
+      parserOptions: {
+        project: './tsconfig.eslint.json',
+        tsconfigRootDir: __dirname,
+      },
     },
     rules: {
-      '@typescript-eslint/no-unused-vars': 'error',
+      // TypeScript resolves identifiers itself; the core rule flags globals.
+      'no-undef': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
     },
-    ignores: ['dist/', 'node_modules/', '**/*.d.ts'],
   },
-];
+  {
+    // Test idioms that fight type-aware linting but are correct here:
+    // chai assertions read as unused expressions (`expect(x).to.be.true`),
+    // aws-sdk-client-mock fakes use async signatures without awaiting, and
+    // stubbing `S3Client.prototype.destroy` reads an unbound method.
+    files: ['test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-expressions': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  }
+);
