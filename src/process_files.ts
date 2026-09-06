@@ -150,7 +150,7 @@ export async function processFiles(
   }
 
   const client = isS3 ? new S3Client(settings.s3Config ?? {}) : undefined;
-  const createdFiles: string[] = new Array(tasks.length);
+  const createdFiles: string[] = new Array<string>(tasks.length);
   const writtenLocalPaths: string[] = [];
   const uploadedKeys: string[] = [];
 

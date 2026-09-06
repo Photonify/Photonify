@@ -5,9 +5,12 @@
  * decode error, an S3 transport error) it is attached as `cause`.
  */
 export class PhotonifyError extends Error {
-  // Declared explicitly so `cause` is on the emitted .d.ts even when the
-  // consumer's lib is below ES2022 (where `Error.cause` does not exist).
-  readonly cause?: unknown;
+  // `declare` puts `cause` on the emitted .d.ts (so consumers whose lib is
+  // below ES2022 can read it) without emitting a class field. A real field
+  // would, under ES2022's useDefineForClassFields, define an own `cause`
+  // property on every instance — making `'cause' in err` true and printing
+  // `{ cause: undefined }` even when no cause was passed.
+  declare readonly cause?: unknown;
 
   constructor(message: string, options?: { cause?: unknown }) {
     super(message);
@@ -15,8 +18,8 @@ export class PhotonifyError extends Error {
     if (options && 'cause' in options) {
       this.cause = options.cause;
     }
-    // Restore the prototype chain so `instanceof` holds when this class is
-    // down-levelled by TypeScript's compilation target.
+    // Defensive: keep `instanceof` working if the compile target is ever
+    // lowered to one that emits a down-levelled (function-based) class.
     Object.setPrototypeOf(this, PhotonifyError.prototype);
   }
 }
