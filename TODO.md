@@ -155,3 +155,41 @@ Items are ordered by priority within each section. Check items off as they land.
       `@types`; use `node:test`, `node:assert/strict`, Node's built-in type
       stripping and `--experimental-test-coverage`. Rewrite the three test files
       and `test/helpers.ts`; update `.mocharc.json` (remove), `scripts`, and CI.
+
+## Subagent review of PR #8 (Fable 5.1, high effort, 2026-09-06)
+
+Branch `fix/p0-process-files-bugs`. The reviewer confirmed all 8 new regression
+tests fail on the old `src/process_files.ts` and pass on the new one, and that
+the worker pool, `.rotate()`, validation order, and `Object.entries` handling
+are correct. Findings, with my verdict and status:
+
+- [ ] **1. Rollback omits the key/path whose write threw** (`src/process_files.ts`
+      runTask). `uploadedKeys.push` / `writtenLocalPaths.push` run only after the
+      I/O resolves, so a PutObject that fails after S3 stored the body, or a
+      `toFile` that fails mid-write, leaves an orphan. CONFIRMED by reviewer.
+      **Agree.** Fix: push before the `await`; cleanup already tolerates
+      missing keys/files.
+- [ ] **2. Stricter validation is a behavior change, not just a fix.**
+      `concurrency: 0` / fractions used to clamp and `Infinity` meant unbounded;
+      aliases with `.`/`@` and `sizes: {}` used to work. CHANGELOG lists these
+      only under "Fixed". **Agree.** Fix: accept `Infinity` as unbounded; move
+      the rest to a "Changed" entry; note the release should be at least a
+      minor bump (user's call: 4.1.0 vs 5.0.0).
+- [ ] **3. Race test runs ~1.26s against Mocha's 2s default timeout.**
+      **Agree.** Fix: `"timeout": 10000` in `.mocharc.json` (P2 item).
+- [ ] **4. `sizes: {}` silently returns `{ createdFiles: [] }`.** Same class as
+      the NaN bug. **Agree.** Fix: throw when `sizes` has no entries; test + README.
+- [ ] **5. `String(value)` in error messages throws on null-prototype objects.**
+      **Agree** (cheap). Fix: `util.inspect(value)`.
+- [ ] **6. Rollback `DeleteObjects` has no time bound**, so an S3 outage adds
+      SDK retry latency before the caller sees the rejection. **Partly agree.**
+      Document in README; a configurable abort timeout is deferred (P1 candidate).
+- [ ] **7. TODO.md / CHANGELOG stale.** P4 items about `concurrency` wording and
+      README alias/orientation/S3 docs are done but unchecked; CHANGELOG's
+      `[null]` wording. **Agree.** Fix: check off, reword.
+- [ ] **8. Alias regex rejects `.` and `@`** (e.g. `thumb@2x`, `2.5x`); no length
+      cap. **Disagree / keep.** Product choice: keeping the character set
+      minimal is simpler and documented. Revisit if users report breakage.
+- [ ] **9. Coverage gaps:** concurrency limit still unasserted (P2 item);
+      >1000-key rollback chunk loop untested. **Agree on the first.** Fix: add a
+      max-in-flight test via the S3 mock. Skip the chunk-loop test.
