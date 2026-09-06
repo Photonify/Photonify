@@ -6,10 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Photonify is a published npm package (a library, not an app) that takes image buffers, resizes them into multiple sizes with [Sharp](https://github.com/lovell/sharp), and stores the results either on the local filesystem or in AWS S3. It also supports batch-deleting files from S3.
 
-The entire public API is two functions re-exported from `src/index.ts`:
+The public API is two functions, the `PhotonifyError` class (`src/errors.ts`),
+and the public types — all re-exported from `src/index.ts`:
 
 - `processFiles(files, settings)` — `src/process_files.ts`
 - `removeFiles(fileNames, settings)` — `src/remove_files.ts`
+- `PhotonifyError` — `src/errors.ts` (every rejection is one; the underlying error is on `cause`)
+
+The prioritized code-review backlog (open work, ordered by priority) lives in [GitHub issue #9](https://github.com/Photonify/Photonify/issues/9).
 
 ## Commands
 
@@ -35,7 +39,7 @@ Storage mode (`settings.storage`) controls the write path:
 - **local** (default): files are written directly to `settings.outputDest` (created with `mkdir -p` if missing). `outputDest` is required; `processFiles` throws if it's absent.
 - **s3**: `processFiles` creates one shared `S3Client`, resizes each image to a Buffer (`sharp(...).toBuffer()`), and uploads it directly via `uploadFile` (`src/upload_file.ts` — a thin `PutObject` wrapper) with the format's `ContentType`. No temp files or staging directory are involved. `processFiles` throws early if `storage: 's3'` is set without both `s3Config` and `s3Bucket`, and always destroys the client in a `finally`.
 
-On any failure, `processFiles` best-effort unlinks locally-written files and rethrows a `Photonify: Error processing images` error with the original error as its `cause`.
+On any failure, `processFiles` best-effort rolls back everything it produced — locally-written files are unlinked, and in S3 mode already-uploaded objects are deleted with `DeleteObjects` (time-bounded to 10s per batch) — then rethrows a `PhotonifyError` (`Photonify: Error processing images`) with the original error as its `cause`.
 
 `removeFiles` batch-deletes S3 objects, chunking into requests of at most 1000 keys (the S3 `DeleteObjects` limit) and throwing if the response reports per-key `Errors`. There is intentionally no local-filesystem delete support — callers are expected to use `fs.unlink` themselves (see README).
 
