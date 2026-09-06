@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [5.0.0]
+## [5.0.0] - 2026-09-06
 
 ### Breaking
 
@@ -84,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`concurrency: NaN` no longer silently produces nothing.** It previously
   spawned zero workers and resolved with an array of empty slots.
 
-## [4.0.1]
+## [4.0.1] - 2026-08-18
 
 ### Changed
 
@@ -97,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - CI workflow to publish to npm on GitHub Release.
 
-## [4.0.0]
+## [4.0.0] - 2026-08-09
 
 ### Breaking
 
@@ -123,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 See the [v4.0.0 release notes](https://github.com/Photonify/Photonify/releases/tag/v4.0.0)
 for the full list.
 
-## [3.0.10]
+## [3.0.10] - 2024-01-29
 
 - Final 3.x release. See the
   [3.x release notes](https://github.com/Photonify/Photonify/releases) for details.
