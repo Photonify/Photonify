@@ -18,8 +18,8 @@ Node version is pinned to `22.16.0` (`.nvmrc`); package manager is Yarn classic 
 - Build: `yarn build` (cleans `dist/`, then runs `tsc`)
 - Test: `yarn test` (runs Mocha)
 - Run a single test: `npx mocha --grep "S3 storage"` (match against `describe`/`it` text)
-- Coverage: `yarn coverage` (c8 + Mocha)
-- Lint: `yarn lint` (ESLint over `**/*.ts`, flat config in `eslint.config.js`)
+- Coverage: `yarn coverage` (c8 + Mocha; enforces thresholds via `.c8rc.json`, which excludes the type-only `src/types.ts`)
+- Lint: `yarn lint` (ESLint over `**/*.ts`, flat config in `eslint.config.js`; type-aware via `tsconfig.eslint.json`, which includes `src/` and `test/` — a new `.ts` file outside those will error until it's covered by that project)
 - Format: `yarn prettier` (Prettier over the repo; `dist/`, `node_modules/`, `tmp_*` are ignored)
 
 S3 is mocked in tests with `aws-sdk-client-mock`; no network or credentials are needed.

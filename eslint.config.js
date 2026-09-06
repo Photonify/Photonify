@@ -10,6 +10,9 @@ module.exports = tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
+    // Type-aware linting for the TypeScript sources and tests. Scoped to *.ts
+    // so the `project` option is not applied to the flat-config file below.
+    files: ['**/*.ts'],
     languageOptions: {
       parserOptions: {
         project: './tsconfig.eslint.json',
@@ -17,9 +20,26 @@ module.exports = tseslint.config(
       },
     },
     rules: {
-      // TypeScript resolves identifiers itself; the core rule flags globals.
-      'no-undef': 'off',
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
+    // This flat-config file is CommonJS JS; lint it without type information so
+    // `eslint .` / editor integrations don't fail on it not being in the project.
+    files: ['**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        require: 'readonly',
+        module: 'readonly',
+        __dirname: 'readonly',
+      },
+    },
+    rules: {
+      // Turn off the type-checked rules (this file is linted without a project)
+      // and allow require() in this CommonJS config file.
+      ...tseslint.configs.disableTypeChecked.rules,
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
   {

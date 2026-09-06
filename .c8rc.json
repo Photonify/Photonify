@@ -3,8 +3,8 @@
   "include": ["src/**/*.ts"],
   "exclude": ["src/types.ts"],
   "check-coverage": true,
-  "statements": 95,
-  "branches": 90,
-  "functions": 95,
-  "lines": 95
+  "statements": 100,
+  "branches": 95,
+  "functions": 100,
+  "lines": 100
 }
