@@ -120,6 +120,39 @@ describe('processFiles', () => {
       expect(meta.height).to.equal(expectedHeight);
     });
 
+    it('applies the fit strategy when both dimensions are given', async () => {
+      // A 100x50 (2:1) source into a 40x40 box.
+      const wide = await sharp({
+        create: { width: 100, height: 50, channels: 3, background: 'red' },
+      })
+        .jpeg()
+        .toBuffer();
+
+      const inside = await processFiles(wide, {
+        outputDest: LOCAL_DEST,
+        fit: 'inside',
+        sizes: { box: { width: 40, height: 40 } },
+      });
+      const insideMeta = await sharp(
+        path.join(LOCAL_DEST, inside.createdFiles[0])
+      ).metadata();
+      // 'inside' scales to fit within the box, preserving aspect ratio.
+      expect(insideMeta.width).to.equal(40);
+      expect(insideMeta.height).to.equal(20);
+
+      const cover = await processFiles(wide, {
+        outputDest: LOCAL_DEST,
+        fit: 'cover',
+        sizes: { box: { width: 40, height: 40 } },
+      });
+      const coverMeta = await sharp(
+        path.join(LOCAL_DEST, cover.createdFiles[0])
+      ).metadata();
+      // 'cover' fills the exact box (cropping the overflow).
+      expect(coverMeta.width).to.equal(40);
+      expect(coverMeta.height).to.equal(40);
+    });
+
     it('honors a custom output format (png)', async () => {
       const result = await processFiles([readImage('first_image.jpg')], {
         outputDest: LOCAL_DEST,
@@ -663,6 +696,47 @@ describe('processFiles', () => {
         /unsupported image format/i
       );
       expect(s3Mock.commandCalls(DeleteObjectsCommand)).to.have.lengthOf(1);
+    });
+
+    it('chunks the rollback into 1000-key DeleteObjects batches', async function () {
+      // Force > 1000 uploaded keys so the rollback loop runs more than once.
+      // Each key is pushed before its upload awaits, so with unlimited
+      // concurrency all keys are recorded before the single failure aborts.
+      this.timeout(30000);
+      s3Mock.on(DeleteObjectsCommand).resolves({});
+
+      let putCount = 0;
+      s3Mock.on(PutObjectCommand).callsFake(async () => {
+        putCount += 1;
+        // Fail exactly one upload once all keys have been recorded.
+        if (putCount === 750) throw new Error('socket hang up');
+        return {};
+      });
+
+      const sizes: Record<string, { width: number }> = {};
+      for (let i = 0; i < 1001; i += 1) sizes[`s${i}`] = { width: 8 };
+
+      const tiny = await sharp({
+        create: { width: 16, height: 16, channels: 3, background: 'green' },
+      })
+        .jpeg()
+        .toBuffer();
+
+      await assertRejects(
+        processFiles(tiny, { ...s3Settings, concurrency: Infinity, sizes }),
+        'Error processing images'
+      );
+
+      const deletes = s3Mock.commandCalls(DeleteObjectsCommand);
+      expect(deletes).to.have.lengthOf(2); // 1000 + 1
+      expect(deletes[0].args[0].input.Delete?.Objects).to.have.lengthOf(1000);
+      expect(deletes[1].args[0].input.Delete?.Objects).to.have.lengthOf(1);
+      // Each batch carries its own abort signal.
+      for (const call of deletes) {
+        const opts = (call.args as unknown[])[1] as
+          { abortSignal?: unknown } | undefined;
+        expect(opts?.abortSignal).to.be.instanceOf(AbortSignal);
+      }
     });
 
     it('destroys the S3 client on success and on failure', async () => {

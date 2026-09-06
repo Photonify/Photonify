@@ -102,6 +102,26 @@ describe('removeFiles', () => {
       );
     });
 
+    it('throws when a later chunk reports per-key errors', async () => {
+      // 1500 keys -> two chunks (1000 + 500). The first succeeds; the second
+      // reports a per-key failure, which must still be surfaced.
+      const keys = Array.from({ length: 1500 }, (_, i) => `file-${i}.jpg`);
+      s3Mock
+        .on(DeleteObjectsCommand)
+        .resolvesOnce({})
+        .resolvesOnce({
+          Errors: [{ Key: 'file-1200.jpg', Message: 'NoSuchKey' }],
+        });
+
+      const error = await assertRejects(
+        removeFiles(keys, validSettings),
+        'S3 delete failed for - file-1200.jpg (NoSuchKey)'
+      );
+      expect(error).to.be.instanceOf(PhotonifyError);
+      // Both chunks were attempted before the failure surfaced.
+      expect(s3Mock.commandCalls(DeleteObjectsCommand)).to.have.lengthOf(2);
+    });
+
     it('wraps and rethrows transport errors with the original as cause', async () => {
       const transportError = new Error('access denied');
       s3Mock.on(DeleteObjectsCommand).rejects(transportError);
