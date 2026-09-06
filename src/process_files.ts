@@ -1,15 +1,18 @@
 import fs from 'fs';
 import path from 'path';
+import { inspect } from 'util';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
-import { S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, S3Client } from '@aws-sdk/client-s3';
 
-import { Settings, Files, SupportedFileTypes } from './types';
+import { Settings, Files, Size, SupportedFileTypes } from './types';
 import {
   DEFAULT_SIZES,
   DEFAULT_CONCURRENCY,
   CONTENT_TYPES,
   SHARP_FORMATS,
+  S3_MAX_DELETE_KEYS,
+  SIZE_ALIAS_PATTERN,
 } from './constants';
 import { uploadFile } from './upload_file';
 
@@ -23,6 +26,31 @@ type Task = {
   width?: number;
   height?: number;
 };
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1;
+}
+
+function validateSize(alias: string, size: Size | undefined): void {
+  if (!SIZE_ALIAS_PATTERN.test(alias)) {
+    throw new Error(
+      `Photonify: Invalid size alias "${alias}". Aliases may only contain letters, digits, "_" and "-".`
+    );
+  }
+  if (!size || (size.width === undefined && size.height === undefined)) {
+    throw new Error(
+      `Photonify: Size "${alias}" must specify a width, a height, or both.`
+    );
+  }
+  for (const dimension of ['width', 'height'] as const) {
+    const value = size[dimension];
+    if (value !== undefined && !isPositiveInteger(value)) {
+      throw new Error(
+        `Photonify: Size "${alias}" has an invalid ${dimension} (${inspect(value)}); expected a positive integer.`
+      );
+    }
+  }
+}
 
 export async function processFiles(
   files: Files,
@@ -41,84 +69,141 @@ export async function processFiles(
   }
 
   const sizes = settings.sizes ?? DEFAULT_SIZES;
+  const sizeEntries = Object.entries(sizes);
+  if (sizeEntries.length === 0) {
+    throw new Error('Photonify: sizes must contain at least one entry.');
+  }
+  for (const [alias, size] of sizeEntries) {
+    validateSize(alias, size);
+  }
+
   const outputFormat: SupportedFileTypes = settings.outputFormat ?? 'jpg';
   if (!CONTENT_TYPES[outputFormat]) {
     throw new Error(`Photonify: Unsupported output format "${outputFormat}".`);
   }
-  const concurrency = Math.max(1, settings.concurrency ?? DEFAULT_CONCURRENCY);
+
+  // Infinity is accepted and means "no limit" (one worker per task).
+  const concurrency = settings.concurrency ?? DEFAULT_CONCURRENCY;
+  if (!isPositiveInteger(concurrency) && concurrency !== Infinity) {
+    throw new Error(
+      `Photonify: concurrency must be a positive integer or Infinity (received ${inspect(settings.concurrency)}).`
+    );
+  }
 
   const filesArray = Array.isArray(files) ? files : [files];
 
   // Build the full task list: one entry per (image x size).
   const tasks: Task[] = [];
   for (const file of filesArray) {
-    for (const [alias, size] of Object.entries(sizes)) {
-      tasks.push({ file, alias, width: size?.width, height: size?.height });
+    for (const [alias, size] of sizeEntries) {
+      tasks.push({ file, alias, width: size.width, height: size.height });
     }
   }
 
+  const outputDest = settings.outputDest as string;
+  const s3Bucket = settings.s3Bucket as string;
+
   if (!isS3) {
-    fs.mkdirSync(settings.outputDest as string, { recursive: true });
+    await fs.promises.mkdir(outputDest, { recursive: true });
   }
 
   const client = isS3 ? new S3Client(settings.s3Config ?? {}) : undefined;
   const createdFiles: string[] = new Array(tasks.length);
   const writtenLocalPaths: string[] = [];
+  const uploadedKeys: string[] = [];
 
   const runTask = async (index: number): Promise<void> => {
     const { file, alias, width, height } = tasks[index];
     const fileName = `${uuidv4().replace(/-/g, '')}-${alias}.${outputFormat}`;
 
+    // rotate() with no argument applies the EXIF orientation so the output
+    // pixels are upright; sharp strips the EXIF tag itself on output.
     const pipeline = sharp(file)
+      .rotate()
       .resize({ width, height, fit: settings.fit })
       .toFormat(SHARP_FORMATS[outputFormat]);
 
+    // Record the destination *before* the write so that a write which fails
+    // after partially succeeding (a PutObject whose response is lost after S3
+    // stored the body, a toFile interrupted mid-write) is still rolled back.
+    // Cleanup tolerates keys/paths that never materialised.
     if (isS3) {
       const buffer = await pipeline.toBuffer();
+      uploadedKeys.push(fileName);
       await uploadFile(
         client as S3Client,
-        settings.s3Bucket as string,
+        s3Bucket,
         fileName,
         buffer,
         CONTENT_TYPES[outputFormat]
       );
     } else {
-      const dest = path.join(settings.outputDest as string, fileName);
-      await pipeline.toFile(dest);
+      const dest = path.join(outputDest, fileName);
       writtenLocalPaths.push(dest);
+      await pipeline.toFile(dest);
     }
 
     createdFiles[index] = fileName;
   };
 
+  const cleanup = async (): Promise<void> => {
+    // Best-effort: remove everything this call produced, ignoring failures.
+    await Promise.all(
+      writtenLocalPaths.map(filePath =>
+        fs.promises.unlink(filePath).catch(() => undefined)
+      )
+    );
+
+    if (client && uploadedKeys.length > 0) {
+      for (let i = 0; i < uploadedKeys.length; i += S3_MAX_DELETE_KEYS) {
+        const batch = uploadedKeys.slice(i, i + S3_MAX_DELETE_KEYS);
+        try {
+          await client.send(
+            new DeleteObjectsCommand({
+              Bucket: s3Bucket,
+              Delete: { Objects: batch.map(Key => ({ Key })), Quiet: true },
+            })
+          );
+        } catch {
+          // ignore cleanup failures
+        }
+      }
+    }
+  };
+
   try {
-    // Concurrency-limited worker pool over the shared task index.
+    // Concurrency-limited worker pool over the shared task index. Workers
+    // never reject: the first failure is recorded and stops further scheduling,
+    // and every in-flight task is awaited before cleanup runs so no file is
+    // written or uploaded after cleanup has already happened.
     let next = 0;
+    let failure: { error: unknown } | undefined;
+
     const worker = async (): Promise<void> => {
-      while (next < tasks.length) {
+      while (!failure && next < tasks.length) {
         const current = next;
         next += 1;
-        await runTask(current);
+        try {
+          await runTask(current);
+        } catch (error) {
+          failure ??= { error };
+        }
       }
     };
+
     const workerCount = Math.min(concurrency, tasks.length);
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
-    return { createdFiles };
-  } catch (error) {
-    // Best-effort cleanup of anything already written locally.
-    for (const filePath of writtenLocalPaths) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch {
-        // ignore cleanup failures
-      }
+    if (failure) {
+      await cleanup();
+      const wrapped = new Error(
+        'Photonify: Error processing images'
+      ) as Error & { cause?: unknown };
+      wrapped.cause = failure.error;
+      throw wrapped;
     }
-    const wrapped = new Error('Photonify: Error processing images') as Error & {
-      cause?: unknown;
-    };
-    wrapped.cause = error;
-    throw wrapped;
+
+    return { createdFiles };
   } finally {
     client?.destroy();
   }
