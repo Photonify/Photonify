@@ -333,6 +333,25 @@ describe('processFiles', () => {
       }
     });
 
+    it('rejects an empty sizes map', async () => {
+      await assertRejects(
+        processFiles([readImage('first_image.jpg')], {
+          outputDest: LOCAL_DEST,
+          sizes: {},
+        }),
+        'sizes must contain at least one entry'
+      );
+    });
+
+    it('accepts concurrency: Infinity as "no limit"', async () => {
+      const result = await processFiles([readImage('first_image.jpg')], {
+        outputDest: LOCAL_DEST,
+        sizes: { a: { width: 10 }, b: { width: 12 } },
+        concurrency: Infinity,
+      });
+      expect(result.createdFiles).to.have.lengthOf(2);
+    });
+
     it('rejects a concurrency that is not a positive integer', async () => {
       for (const concurrency of [NaN, 0, -1, 1.5]) {
         await assertRejects(
@@ -425,6 +444,58 @@ describe('processFiles', () => {
       expect(input.Delete?.Objects?.map(o => o.Key)).to.have.members(
         uploadedKeys
       );
+    });
+
+    it('rolls back the key whose upload threw, not only the ones that succeeded', async () => {
+      // Simulates a PutObject whose response was lost after S3 stored the
+      // body: the SDK rejects, but the object may exist and must be deleted.
+      let calls = 0;
+      s3Mock.on(PutObjectCommand).callsFake(async () => {
+        calls += 1;
+        if (calls === 2) throw new Error('socket hang up');
+        return {};
+      });
+
+      await assertRejects(
+        processFiles([readImage('first_image.jpg')], {
+          ...s3Settings,
+          concurrency: 1,
+          sizes: { a: { width: 20 }, b: { width: 22 } },
+        }),
+        'Error processing images'
+      );
+
+      const attemptedKeys = s3Mock
+        .commandCalls(PutObjectCommand)
+        .map(call => call.args[0].input.Key);
+      expect(attemptedKeys).to.have.lengthOf(2);
+      const deletes = s3Mock.commandCalls(DeleteObjectsCommand);
+      expect(deletes).to.have.lengthOf(1);
+      expect(
+        deletes[0].args[0].input.Delete?.Objects?.map(o => o.Key)
+      ).to.have.members(attemptedKeys);
+    });
+
+    it('never has more than `concurrency` tasks in flight', async () => {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      s3Mock.on(PutObjectCommand).callsFake(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await settle(50);
+        inFlight -= 1;
+        return {};
+      });
+
+      const good = readImage('first_image.jpg');
+      await processFiles([good, good, good], {
+        ...s3Settings,
+        concurrency: 2,
+        sizes: { a: { width: 20 }, b: { width: 22 } },
+      });
+
+      expect(s3Mock.commandCalls(PutObjectCommand)).to.have.lengthOf(6);
+      expect(maxInFlight).to.equal(2);
     });
 
     it('still rejects with the original cause when rollback deletes fail', async () => {

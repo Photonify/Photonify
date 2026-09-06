@@ -88,7 +88,7 @@ Resizes each input image into every configured size and stores the results.
 | `outputFormat` | `'jpg' \| 'png' \| 'tiff'`                                                            | `'jpg'`         | Output encoding and file extension.                                                            |
 | `sizes`        | `Record<string, { width?: number; height?: number }>`                                 | `DEFAULT_SIZES` | Map of alias → dimensions. See [Sizes](#sizes) for alias and dimension rules.                  |
 | `fit`          | `'contain' \| 'cover' \| 'fill' \| 'inside' \| 'outside'`                             | `'cover'`       | How images fit the target box. See [sharp resize](https://sharp.pixelplumbing.com/api-resize). |
-| `concurrency`  | `number`                                                                              | `4`             | Max _(image × size)_ tasks processed in parallel. Must be a positive integer.                  |
+| `concurrency`  | `number`                                                                              | `4`             | Max _(image × size)_ tasks in parallel. A positive integer, or `Infinity` for no limit.        |
 | `s3Config`     | [`S3ClientConfig`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) | —               | **Required for S3 storage.** Passed straight to the AWS SDK `S3Client`.                        |
 | `s3Bucket`     | `string`                                                                              | —               | **Required for S3 storage.** Destination bucket.                                               |
 
@@ -97,6 +97,7 @@ Resizes each input image into every configured size and stores the results.
 Each entry in `sizes` maps an alias to a target box. `processFiles` validates
 the map up front and rejects before doing any work if:
 
+- the map is empty;
 - an alias contains anything other than letters, digits, `_`, or `-` (the alias
   becomes part of the filename / S3 key, so `/` and `..` are not allowed);
 - a size has neither `width` nor `height`;
@@ -215,8 +216,11 @@ await removeFiles(['file1.jpg', 'file2.jpg'], {
 failure, `processFiles` stops scheduling new work, waits for every in-flight
 task to finish, then best-effort removes everything the call produced (local
 files are unlinked; S3 objects are deleted with `DeleteObjects`). Cleanup
-failures are ignored. It then rejects with a `Photonify: Error processing
-images` error whose `cause` is the underlying error:
+failures are ignored, but note that if S3 itself is unreachable the rollback
+request goes through the AWS SDK's normal retry policy before the call
+rejects, so the rejection can be delayed by a few seconds. It then rejects
+with a `Photonify: Error processing images` error whose `cause` is the
+underlying error:
 
 ```javascript
 try {

@@ -61,6 +61,9 @@ Items are ordered by priority within each section. Check items off as they land.
 - [ ] **Expose `withoutEnlargement` and per-format encoder options** (e.g. JPEG
       `quality`). Small images are currently upscaled to fill each size, and
       quality is not configurable. Additive, non-breaking `Settings` fields.
+- [ ] **Time-bound the S3 rollback.** Pass an `abortSignal` (e.g.
+      `AbortSignal.timeout`) to the rollback `DeleteObjects` so an S3 outage
+      does not add SDK retry latency before the caller sees the rejection.
 - [ ] **`removeFiles` takes `Partial<Settings>`** but `Settings` is already
       all-optional; tighten to a dedicated `RemoveSettings` type. Consider
       `Quiet: true` on `DeleteObjectsCommand` to shrink responses.
@@ -75,14 +78,14 @@ Items are ordered by priority within each section. Check items off as they land.
       `test/process_files.test.ts:270` claims it but nothing checks it).
 - [x] Test that `processFiles` destroys the S3 client on both success and
       failure (only `removeFiles` has this test).
-- [ ] Test that the concurrency limit is actually honored (track max in-flight
+- [x] Test that the concurrency limit is actually honored (track max in-flight
       `PutObject` calls via the mock).
 - [ ] Cover `fit`, `tiff`, and a per-key `Errors` batch in the second chunk of a
       `removeFiles` call.
 - [x] `test/helpers.ts:26` regex `[a-z]+` misses aliases with digits or
       uppercase; the doc comment still references a `none.ts` placeholder that
       no longer exists.
-- [ ] Add a Mocha `timeout` (e.g. 10s) in `.mocharc.json` so sharp-heavy tests
+- [x] Add a Mocha `timeout` (e.g. 10s) in `.mocharc.json` so sharp-heavy tests
       do not flake on slow CI runners.
 
 ## P3 — Tooling and CI
@@ -126,11 +129,11 @@ Items are ordered by priority within each section. Check items off as they land.
       `keywords`, `homepage`, `bugs`, `sideEffects: false`, and
       `packageManager`. Consider an `exports` map (keep a `./dist/src/*` subpath
       for backward compatibility with existing deep imports).
-- [ ] README: "Streams resized buffers straight to S3" is inaccurate; each
+- [x] README: "Streams resized buffers straight to S3" is inaccurate; each
       variant is fully buffered then uploaded. `concurrency` is described as
       "images processed in parallel" in README, `src/types.ts:27`, and
       `src/constants.ts:22` but it bounds (image x size) tasks.
-- [ ] README: document alias rules, orientation handling, S3 partial-failure
+- [x] README: document alias rules, orientation handling, S3 partial-failure
       behavior, and the new exported types once the P1 items land.
 - [ ] `CLAUDE.md`: fix the Yarn Berry claim (see P3) and mention `TODO.md`.
 - [x] `DEFAULT_SIZES.xl` is 1280x801 (`src/constants.ts:6`). Decision: leave
@@ -139,6 +142,10 @@ Items are ordered by priority within each section. Check items off as they land.
       exists on disk with only a `.DS_Store`; delete it.
 
 ## Decisions (resolved 2026-09-05)
+
+0. **Release version for the P0 fixes (PR #8):** open. The stricter validation
+   rejects inputs that used to be accepted, so it should be at least 4.1.0;
+   strict semver would say 5.0.0. User's call at release time.
 
 1. **Package manager:** stay on Yarn classic. Remove `.yarnrc.yml` and `.yarn/`,
    add `packageManager`, fix `CLAUDE.md`.
@@ -163,33 +170,32 @@ tests fail on the old `src/process_files.ts` and pass on the new one, and that
 the worker pool, `.rotate()`, validation order, and `Object.entries` handling
 are correct. Findings, with my verdict and status:
 
-- [ ] **1. Rollback omits the key/path whose write threw** (`src/process_files.ts`
+- [x] **1. Rollback omits the key/path whose write threw** (`src/process_files.ts`
       runTask). `uploadedKeys.push` / `writtenLocalPaths.push` run only after the
       I/O resolves, so a PutObject that fails after S3 stored the body, or a
       `toFile` that fails mid-write, leaves an orphan. CONFIRMED by reviewer.
       **Agree.** Fix: push before the `await`; cleanup already tolerates
       missing keys/files.
-- [ ] **2. Stricter validation is a behavior change, not just a fix.**
+- [x] **2. Stricter validation is a behavior change, not just a fix.**
       `concurrency: 0` / fractions used to clamp and `Infinity` meant unbounded;
       aliases with `.`/`@` and `sizes: {}` used to work. CHANGELOG lists these
       only under "Fixed". **Agree.** Fix: accept `Infinity` as unbounded; move
       the rest to a "Changed" entry; note the release should be at least a
       minor bump (user's call: 4.1.0 vs 5.0.0).
-- [ ] **3. Race test runs ~1.26s against Mocha's 2s default timeout.**
+- [x] **3. Race test runs ~1.26s against Mocha's 2s default timeout.**
       **Agree.** Fix: `"timeout": 10000` in `.mocharc.json` (P2 item).
-- [ ] **4. `sizes: {}` silently returns `{ createdFiles: [] }`.** Same class as
+- [x] **4. `sizes: {}` silently returns `{ createdFiles: [] }`.** Same class as
       the NaN bug. **Agree.** Fix: throw when `sizes` has no entries; test + README.
-- [ ] **5. `String(value)` in error messages throws on null-prototype objects.**
+- [x] **5. `String(value)` in error messages throws on null-prototype objects.**
       **Agree** (cheap). Fix: `util.inspect(value)`.
-- [ ] **6. Rollback `DeleteObjects` has no time bound**, so an S3 outage adds
+- [x] **6. Rollback `DeleteObjects` has no time bound**, so an S3 outage adds
       SDK retry latency before the caller sees the rejection. **Partly agree.**
-      Document in README; a configurable abort timeout is deferred (P1 candidate).
-- [ ] **7. TODO.md / CHANGELOG stale.** P4 items about `concurrency` wording and
+      Documented in README; a configurable abort timeout is deferred (see P1).
+- [x] **7. TODO.md / CHANGELOG stale.** P4 items about `concurrency` wording and
       README alias/orientation/S3 docs are done but unchecked; CHANGELOG's
-      `[null]` wording. **Agree.** Fix: check off, reword.
-- [ ] **8. Alias regex rejects `.` and `@`** (e.g. `thumb@2x`, `2.5x`); no length
+      `[null]` wording. **Agree.** Fixed: checked off, reworded.
+- [x] **8. (no change) Alias regex rejects `.` and `@`** (e.g. `thumb@2x`, `2.5x`); no length
       cap. **Disagree / keep.** Product choice: keeping the character set
       minimal is simpler and documented. Revisit if users report breakage.
-- [ ] **9. Coverage gaps:** concurrency limit still unasserted (P2 item);
-      >1000-key rollback chunk loop untested. **Agree on the first.** Fix: add a
+- [x] **9. Coverage gaps:** concurrency limit still unasserted (P2 item); >1000-key rollback chunk loop untested. **Agree on the first.** Fix: add a
       max-in-flight test via the S3 mock. Skip the chunk-loop test.

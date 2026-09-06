@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { inspect } from 'util';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import { DeleteObjectsCommand, S3Client } from '@aws-sdk/client-s3';
@@ -45,7 +46,7 @@ function validateSize(alias: string, size: Size | undefined): void {
     const value = size[dimension];
     if (value !== undefined && !isPositiveInteger(value)) {
       throw new Error(
-        `Photonify: Size "${alias}" has an invalid ${dimension} (${String(value)}); expected a positive integer.`
+        `Photonify: Size "${alias}" has an invalid ${dimension} (${inspect(value)}); expected a positive integer.`
       );
     }
   }
@@ -68,7 +69,11 @@ export async function processFiles(
   }
 
   const sizes = settings.sizes ?? DEFAULT_SIZES;
-  for (const [alias, size] of Object.entries(sizes)) {
+  const sizeEntries = Object.entries(sizes);
+  if (sizeEntries.length === 0) {
+    throw new Error('Photonify: sizes must contain at least one entry.');
+  }
+  for (const [alias, size] of sizeEntries) {
     validateSize(alias, size);
   }
 
@@ -77,10 +82,11 @@ export async function processFiles(
     throw new Error(`Photonify: Unsupported output format "${outputFormat}".`);
   }
 
+  // Infinity is accepted and means "no limit" (one worker per task).
   const concurrency = settings.concurrency ?? DEFAULT_CONCURRENCY;
-  if (!isPositiveInteger(concurrency)) {
+  if (!isPositiveInteger(concurrency) && concurrency !== Infinity) {
     throw new Error(
-      `Photonify: concurrency must be a positive integer (received ${String(settings.concurrency)}).`
+      `Photonify: concurrency must be a positive integer or Infinity (received ${inspect(settings.concurrency)}).`
     );
   }
 
@@ -89,7 +95,7 @@ export async function processFiles(
   // Build the full task list: one entry per (image x size).
   const tasks: Task[] = [];
   for (const file of filesArray) {
-    for (const [alias, size] of Object.entries(sizes)) {
+    for (const [alias, size] of sizeEntries) {
       tasks.push({ file, alias, width: size.width, height: size.height });
     }
   }
@@ -117,8 +123,13 @@ export async function processFiles(
       .resize({ width, height, fit: settings.fit })
       .toFormat(SHARP_FORMATS[outputFormat]);
 
+    // Record the destination *before* the write so that a write which fails
+    // after partially succeeding (a PutObject whose response is lost after S3
+    // stored the body, a toFile interrupted mid-write) is still rolled back.
+    // Cleanup tolerates keys/paths that never materialised.
     if (isS3) {
       const buffer = await pipeline.toBuffer();
+      uploadedKeys.push(fileName);
       await uploadFile(
         client as S3Client,
         s3Bucket,
@@ -126,11 +137,10 @@ export async function processFiles(
         buffer,
         CONTENT_TYPES[outputFormat]
       );
-      uploadedKeys.push(fileName);
     } else {
       const dest = path.join(outputDest, fileName);
-      await pipeline.toFile(dest);
       writtenLocalPaths.push(dest);
+      await pipeline.toFile(dest);
     }
 
     createdFiles[index] = fileName;
