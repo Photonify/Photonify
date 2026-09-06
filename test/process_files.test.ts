@@ -3,7 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { mockClient, AwsClientStub } from 'aws-sdk-client-mock';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectsCommand,
+} from '@aws-sdk/client-s3';
 
 import { processFiles } from '../src/index';
 import { assertRejects, cleanGeneratedFiles } from './helpers';
@@ -13,6 +17,15 @@ const LOCAL_DEST = path.join(__dirname, 'tmp_resized_images');
 
 const readImage = (name: string): Buffer =>
   fs.readFileSync(path.join(IMAGES_DIR, name));
+
+/** A 400x200 red JPEG whose EXIF orientation says "rotate 90°" (portrait). */
+const orientedImage = (): Promise<Buffer> =>
+  sharp({ create: { width: 400, height: 200, channels: 3, background: 'red' } })
+    .jpeg()
+    .withMetadata({ orientation: 6 })
+    .toBuffer();
+
+const settle = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const s3Settings = {
   storage: 's3' as const,
@@ -174,6 +187,60 @@ describe('processFiles', () => {
       // the file written for the first image should have been removed
       expect(countFiles()).to.equal(before);
     });
+
+    it('waits for in-flight tasks before cleaning up when one fails early', async () => {
+      const countFiles = () =>
+        fs.existsSync(LOCAL_DEST) ? fs.readdirSync(LOCAL_DEST).length : 0;
+      const before = countFiles();
+      const good = readImage('first_image.jpg');
+
+      // The bad buffer fails immediately on one worker while the other
+      // workers are still resizing large outputs. Cleanup must not run until
+      // those writes have finished, otherwise they land after the unlink.
+      await assertRejects(
+        processFiles([Buffer.from('not an image'), good, good, good], {
+          outputDest: LOCAL_DEST,
+          concurrency: 4,
+          sizes: {
+            a: { width: 2000, height: 2000 },
+            b: { width: 1900, height: 1900 },
+          },
+        }),
+        'Error processing images'
+      );
+
+      expect(countFiles()).to.equal(before);
+      // Give any (incorrectly) still-running writes a chance to surface.
+      await settle(1000);
+      expect(countFiles()).to.equal(before);
+    });
+
+    it('applies EXIF orientation so output pixels are upright', async () => {
+      const result = await processFiles(await orientedImage(), {
+        outputDest: LOCAL_DEST,
+        sizes: { t: { width: 100 } },
+      });
+
+      const meta = await sharp(
+        path.join(LOCAL_DEST, result.createdFiles[0])
+      ).metadata();
+      // 400x200 rotated 90° is 200x400 portrait; width 100 => 100x200
+      expect(meta.width).to.equal(100);
+      expect(meta.height).to.equal(200);
+      expect(meta.orientation).to.be.undefined;
+    });
+
+    it('exposes the underlying error as `cause`', async () => {
+      const error = (await assertRejects(
+        processFiles([Buffer.from('not an image')], { outputDest: LOCAL_DEST }),
+        'Error processing images'
+      )) as Error & { cause?: unknown };
+
+      expect(error.cause).to.be.instanceOf(Error);
+      expect((error.cause as Error).message).to.match(
+        /unsupported image format/i
+      );
+    });
   });
 
   describe('validation', () => {
@@ -223,6 +290,61 @@ describe('processFiles', () => {
         'Unsupported output format'
       );
     });
+
+    it('rejects a size alias that could escape the output directory', async () => {
+      for (const alias of ['../../escaped', 'a/b', 'a\\b', 'with space', '']) {
+        await assertRejects(
+          processFiles([readImage('first_image.jpg')], {
+            outputDest: LOCAL_DEST,
+            sizes: { [alias]: { width: 10 } },
+          }),
+          'Invalid size alias'
+        );
+      }
+    });
+
+    it('accepts aliases made of letters, digits, "_" and "-"', async () => {
+      const result = await processFiles([readImage('first_image.jpg')], {
+        outputDest: LOCAL_DEST,
+        sizes: { 'Thumb_2x-v1': { width: 10 } },
+      });
+      expect(result.createdFiles[0]).to.match(/-Thumb_2x-v1\.jpg$/);
+    });
+
+    it('rejects a size with neither width nor height', async () => {
+      await assertRejects(
+        processFiles([readImage('first_image.jpg')], {
+          outputDest: LOCAL_DEST,
+          sizes: { t: {} },
+        }),
+        'must specify a width, a height, or both'
+      );
+    });
+
+    it('rejects a size with a non-positive-integer dimension', async () => {
+      for (const width of [0, -5, 1.5, NaN]) {
+        await assertRejects(
+          processFiles([readImage('first_image.jpg')], {
+            outputDest: LOCAL_DEST,
+            sizes: { t: { width } },
+          }),
+          'invalid width'
+        );
+      }
+    });
+
+    it('rejects a concurrency that is not a positive integer', async () => {
+      for (const concurrency of [NaN, 0, -1, 1.5]) {
+        await assertRejects(
+          processFiles([readImage('first_image.jpg')], {
+            outputDest: LOCAL_DEST,
+            sizes: { t: { width: 10 } },
+            concurrency,
+          }),
+          'concurrency must be a positive integer'
+        );
+      }
+    });
   });
 
   describe('s3 storage', () => {
@@ -237,6 +359,9 @@ describe('processFiles', () => {
 
       expect(result.createdFiles).to.have.lengthOf(2);
       expect(s3Mock.commandCalls(PutObjectCommand)).to.have.lengthOf(2);
+      for (const file of result.createdFiles) {
+        expect(fs.existsSync(path.join(LOCAL_DEST, file))).to.be.false;
+      }
     });
 
     it('uploads to the configured bucket with the correct key and content type', async () => {
@@ -263,6 +388,90 @@ describe('processFiles', () => {
         }),
         'Error processing images'
       );
+    });
+
+    it('waits for in-flight uploads, then best-effort deletes them on failure', async () => {
+      let started = 0;
+      let finished = 0;
+      s3Mock.on(PutObjectCommand).callsFake(async () => {
+        started += 1;
+        await settle(150);
+        finished += 1;
+        return {};
+      });
+
+      const good = readImage('first_image.jpg');
+      await assertRejects(
+        processFiles([good, good, Buffer.from('not an image')], {
+          ...s3Settings,
+          concurrency: 3,
+          sizes: { sm: { width: 20, height: 20 } },
+        }),
+        'Error processing images'
+      );
+
+      // Every upload that started had completed before the rejection.
+      expect(started).to.be.greaterThan(0);
+      expect(finished).to.equal(started);
+
+      const deletes = s3Mock.commandCalls(DeleteObjectsCommand);
+      expect(deletes).to.have.lengthOf(1);
+      const input = deletes[0].args[0].input;
+      expect(input.Bucket).to.equal(s3Settings.s3Bucket);
+      expect(input.Delete?.Quiet).to.be.true;
+      const uploadedKeys = s3Mock
+        .commandCalls(PutObjectCommand)
+        .map(call => call.args[0].input.Key);
+      expect(input.Delete?.Objects?.map(o => o.Key)).to.have.members(
+        uploadedKeys
+      );
+    });
+
+    it('still rejects with the original cause when rollback deletes fail', async () => {
+      s3Mock.on(DeleteObjectsCommand).rejects(new Error('delete denied'));
+      const good = readImage('first_image.jpg');
+
+      const error = (await assertRejects(
+        processFiles([good, Buffer.from('not an image')], {
+          ...s3Settings,
+          concurrency: 1,
+          sizes: { sm: { width: 20, height: 20 } },
+        }),
+        'Error processing images'
+      )) as Error & { cause?: unknown };
+
+      expect((error.cause as Error).message).to.match(
+        /unsupported image format/i
+      );
+      expect(s3Mock.commandCalls(DeleteObjectsCommand)).to.have.lengthOf(1);
+    });
+
+    it('destroys the S3 client on success and on failure', async () => {
+      let destroyCount = 0;
+      const original = S3Client.prototype.destroy;
+      S3Client.prototype.destroy = function destroy(this: S3Client) {
+        destroyCount += 1;
+        return original.apply(this);
+      };
+
+      try {
+        await processFiles([readImage('first_image.jpg')], {
+          ...s3Settings,
+          sizes: { sm: { width: 20, height: 20 } },
+        });
+        expect(destroyCount).to.equal(1);
+
+        await assertRejects(
+          processFiles([Buffer.from('not an image')], {
+            ...s3Settings,
+            sizes: { sm: { width: 20, height: 20 } },
+          }),
+          'Error processing images'
+        );
+        expect(destroyCount).to.equal(2);
+      } finally {
+        S3Client.prototype.destroy = original;
+      }
     });
   });
 });

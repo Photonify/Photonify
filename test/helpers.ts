@@ -23,11 +23,11 @@ export async function assertRejects(
   throw new Error('Expected promise to reject, but it resolved');
 }
 
-const GENERATED_FILE = /^[a-f0-9]{32}-[a-z]+\.[a-z]+$/;
+const GENERATED_FILE = /^[a-f0-9]{32}-[A-Za-z0-9_-]+\.[a-z]+$/;
 
 /**
  * Remove any Photonify-generated files (uuid-alias.ext) left in `dir`.
- * Leaves fixtures and placeholder files (e.g. .DS_Store, none.ts) untouched.
+ * Leaves fixtures and placeholder files (e.g. .keep, .DS_Store) untouched.
  */
 export function cleanGeneratedFiles(dir: string): void {
   if (!fs.existsSync(dir)) return;

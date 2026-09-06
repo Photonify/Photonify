@@ -86,13 +86,27 @@ Resizes each input image into every configured size and stores the results.
 | `storage`      | `'local' \| 's3'`                                                                     | `'local'`       | Where output is written.                                                                       |
 | `outputDest`   | `string`                                                                              | —               | **Required for local storage.** Directory to write to; created if it doesn't exist.            |
 | `outputFormat` | `'jpg' \| 'png' \| 'tiff'`                                                            | `'jpg'`         | Output encoding and file extension.                                                            |
-| `sizes`        | `Record<string, { width?: number; height?: number }>`                                 | `DEFAULT_SIZES` | Map of alias → dimensions. Aliases are arbitrary. One dimension preserves aspect ratio.        |
+| `sizes`        | `Record<string, { width?: number; height?: number }>`                                 | `DEFAULT_SIZES` | Map of alias → dimensions. See [Sizes](#sizes) for alias and dimension rules.                  |
 | `fit`          | `'contain' \| 'cover' \| 'fill' \| 'inside' \| 'outside'`                             | `'cover'`       | How images fit the target box. See [sharp resize](https://sharp.pixelplumbing.com/api-resize). |
-| `concurrency`  | `number`                                                                              | `4`             | Max images processed in parallel.                                                              |
+| `concurrency`  | `number`                                                                              | `4`             | Max _(image × size)_ tasks processed in parallel. Must be a positive integer.                  |
 | `s3Config`     | [`S3ClientConfig`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) | —               | **Required for S3 storage.** Passed straight to the AWS SDK `S3Client`.                        |
 | `s3Bucket`     | `string`                                                                              | —               | **Required for S3 storage.** Destination bucket.                                               |
 
-#### Default sizes
+#### Sizes
+
+Each entry in `sizes` maps an alias to a target box. `processFiles` validates
+the map up front and rejects before doing any work if:
+
+- an alias contains anything other than letters, digits, `_`, or `-` (the alias
+  becomes part of the filename / S3 key, so `/` and `..` are not allowed);
+- a size has neither `width` nor `height`;
+- a `width` or `height` is not a positive integer.
+
+Give one dimension to preserve the source aspect ratio, or both to fit the
+image into the box using `fit`.
+
+EXIF orientation is applied before resizing, so photos from phones and cameras
+come out upright. The orientation tag itself is not carried into the output.
 
 When `sizes` is omitted, these four are produced:
 
@@ -198,9 +212,11 @@ await removeFiles(['file1.jpg', 'file2.jpg'], {
 ## Error handling
 
 `processFiles` and `removeFiles` reject rather than logging. On a processing
-failure, `processFiles` cleans up any files it already wrote locally and rejects
-with a `Photonify: Error processing images` error whose `cause` is the
-underlying error:
+failure, `processFiles` stops scheduling new work, waits for every in-flight
+task to finish, then best-effort removes everything the call produced (local
+files are unlinked; S3 objects are deleted with `DeleteObjects`). Cleanup
+failures are ignored. It then rejects with a `Photonify: Error processing
+images` error whose `cause` is the underlying error:
 
 ```javascript
 try {

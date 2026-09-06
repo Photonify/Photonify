@@ -24,7 +24,7 @@ export type Settings = {
   sizes?: Sizes;
   /** How images are fit into the target dimensions. Defaults to sharp's 'cover'. */
   fit?: Fit;
-  /** Max number of images processed in parallel. Defaults to 4. */
+  /** Max number of (image x size) tasks processed in parallel. Must be a positive integer. Defaults to 4. */
   concurrency?: number;
   s3Config?: S3ClientConfig;
   s3Bucket?: string;

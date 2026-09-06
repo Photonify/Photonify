@@ -19,7 +19,7 @@ export const DEFAULT_SIZES: Sizes = {
   },
 };
 
-/** Default number of images processed in parallel. */
+/** Default number of (image x size) tasks processed in parallel. */
 export const DEFAULT_CONCURRENCY = 4;
 
 /** S3 DeleteObjects accepts at most 1000 keys per request. */
@@ -41,3 +41,9 @@ export const SHARP_FORMATS: Record<
   png: 'png',
   tiff: 'tiff',
 };
+
+/**
+ * Size aliases become part of the output filename / S3 key, so restrict them
+ * to characters that cannot introduce path separators or traversal.
+ */
+export const SIZE_ALIAS_PATTERN = /^[A-Za-z0-9_-]+$/;
