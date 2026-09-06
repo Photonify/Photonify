@@ -1,22 +1,14 @@
 import type { Sizes, SupportedFileTypes } from './types';
 
+/**
+ * Default output sizes. Each specifies only a width, so the height is derived
+ * from the source aspect ratio and images are never cropped or stretched.
+ */
 export const DEFAULT_SIZES: Sizes = {
-  xl: {
-    width: 1280,
-    height: 801,
-  },
-  lg: {
-    width: 1024,
-    height: 768,
-  },
-  md: {
-    width: 640,
-    height: 480,
-  },
-  sm: {
-    width: 160,
-    height: 144,
-  },
+  xl: { width: 1280 },
+  lg: { width: 1024 },
+  md: { width: 640 },
+  sm: { width: 320 },
 };
 
 /** Default number of (image x size) tasks processed in parallel. */

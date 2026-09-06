@@ -112,14 +112,15 @@ image into the box using `fit`.
 EXIF orientation is applied before resizing, so photos from phones and cameras
 come out upright. The orientation tag itself is not carried into the output.
 
-When `sizes` is omitted, these four are produced:
+When `sizes` is omitted, these four are produced. Each sets only a width, so the
+height is derived from the source aspect ratio (no cropping or stretching):
 
-| Alias | Width | Height |
-| ----- | ----- | ------ |
-| `xl`  | 1280  | 801    |
-| `lg`  | 1024  | 768    |
-| `md`  | 640   | 480    |
-| `sm`  | 160   | 144    |
+| Alias | Width | Height            |
+| ----- | ----- | ----------------- |
+| `xl`  | 1280  | from source ratio |
+| `lg`  | 1024  | from source ratio |
+| `md`  | 640   | from source ratio |
+| `sm`  | 320   | from source ratio |
 
 ### `removeFiles(fileNames, settings)`
 
