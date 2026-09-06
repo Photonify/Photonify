@@ -17,6 +17,14 @@ jobs:
           node-version-file: .nvmrc
           cache: yarn
           registry-url: https://registry.npmjs.org
+      - name: Verify release tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Release tag '$GITHUB_REF_NAME' does not match package.json version '$PKG'"
+            exit 1
+          fi
       - run: yarn install --frozen-lockfile
       - run: yarn lint
       - run: yarn build

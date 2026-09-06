@@ -20,7 +20,9 @@ jobs:
           cache: yarn
       - run: yarn install --frozen-lockfile
       - run: yarn build
-      - run: yarn test
+      # `yarn coverage` (not `yarn test`) so the .c8rc.json check-coverage gate
+      # is enforced in CI, not just locally.
+      - run: yarn coverage
 
   lint:
     runs-on: ubuntu-latest
