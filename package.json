@@ -3,7 +3,7 @@
   "version": "5.0.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Photonify/Photonify.git"
+    "url": "git+https://github.com/Photonify/Photonify.git"
   },
   "homepage": "https://github.com/Photonify/Photonify#readme",
   "bugs": {
@@ -15,7 +15,6 @@
     "resize",
     "sharp",
     "thumbnail",
-    "thumbnails",
     "image-processing",
     "s3",
     "aws",
@@ -25,6 +24,7 @@
     "png",
     "tiff"
   ],
+  "type": "commonjs",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
@@ -33,6 +33,10 @@
       "default": "./dist/src/index.js"
     },
     "./dist/src/*": {
+      "types": "./dist/src/*.d.ts",
+      "default": "./dist/src/*.js"
+    },
+    "./dist/src/*.js": {
       "types": "./dist/src/*.d.ts",
       "default": "./dist/src/*.js"
     },

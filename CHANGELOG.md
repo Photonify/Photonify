@@ -109,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accept `endpoint`, `forcePathStyle`, etc.
 - **Node `>=20.9.0` is now required** (previously lower), as required by sharp 0.35.
 - **S3 uploads go directly to the bucket.** The `tmp_for_upload` staging
-  directory has been removed; resized buffers stream straight to S3.
+  directory has been removed; resized buffers are uploaded straight to S3.
 
 ### Added
 

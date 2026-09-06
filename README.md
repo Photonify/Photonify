@@ -18,9 +18,9 @@ safe to write without overwrite checks.
 Resizing is powered by [sharp](https://github.com/lovell/sharp) and runs through
 a concurrency-limited worker pool over the flattened (image × size) task list.
 S3 uploads send each fully-resized buffer directly to the bucket with no temp
-files, and a failed run best-effort cleans up any files it already wrote. The full API is
-two functions — `processFiles` and `removeFiles` — and ships with TypeScript
-declarations.
+files, and a failed run best-effort cleans up any files it already wrote. The
+full API is two functions — `processFiles` and `removeFiles` — and ships with
+TypeScript declarations.
 
 ## Features
 
