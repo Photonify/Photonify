@@ -5,9 +5,40 @@
     "type": "git",
     "url": "https://github.com/Photonify/Photonify.git"
   },
-  "description": "Photonify is a utility to manage multipart image uploads and automatically process them with fingerprinting and storage.",
+  "homepage": "https://github.com/Photonify/Photonify#readme",
+  "bugs": {
+    "url": "https://github.com/Photonify/Photonify/issues"
+  },
+  "description": "Resize image buffers into multiple sizes with sharp and store them on the local filesystem or AWS S3.",
+  "keywords": [
+    "image",
+    "resize",
+    "sharp",
+    "thumbnail",
+    "thumbnails",
+    "image-processing",
+    "s3",
+    "aws",
+    "webp",
+    "avif",
+    "jpeg",
+    "png",
+    "tiff"
+  ],
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./dist/src/*": {
+      "types": "./dist/src/*.d.ts",
+      "default": "./dist/src/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
   "files": [
     "dist/src"
   ],

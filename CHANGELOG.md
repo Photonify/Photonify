@@ -61,6 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AbortSignal.timeout`, so an S3 outage cannot add the AWS SDK's full retry
   latency before the caller sees the original failure.
 - `removeFiles` now sends `DeleteObjects` with `Quiet: true`.
+- **Package metadata:** accurate `description`, added `keywords`, `homepage`,
+  `bugs`, `sideEffects: false`, and an `exports` map. The exports map keeps a
+  `./dist/src/*` subpath so existing deep imports (e.g.
+  `photonify/dist/src/types`) still resolve, though importing types from the
+  package root is now preferred.
 
 ### Fixed
 

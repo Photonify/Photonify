@@ -17,8 +17,8 @@ safe to write without overwrite checks.
 
 Resizing is powered by [sharp](https://github.com/lovell/sharp) and runs through
 a concurrency-limited worker pool over the flattened (image × size) task list.
-S3 uploads stream resized buffers directly to the bucket with no temp files, and
-a failed run best-effort cleans up any files it already wrote. The full API is
+S3 uploads send each fully-resized buffer directly to the bucket with no temp
+files, and a failed run best-effort cleans up any files it already wrote. The full API is
 two functions — `processFiles` and `removeFiles` — and ships with TypeScript
 declarations.
 
@@ -26,7 +26,7 @@ declarations.
 
 - 🖼️ Resize one or many images into any number of named sizes in a single call
 - 💾 Write to the **local filesystem** or upload directly to **AWS S3**
-- ☁️ Streams resized buffers straight to S3 (no temp files) with the correct `ContentType`
+- ☁️ Uploads resized buffers straight to S3 (no temp files) with the correct `ContentType`
 - 🏷️ Unique fingerprinted filenames (`<uuid>-<sizeAlias>.<format>`)
 - ⚙️ Configurable output format, `fit` strategy, and parallelism
 - 🧹 `removeFiles` for batch-deleting S3 objects (auto-chunked past S3's 1000-key limit)
@@ -155,8 +155,9 @@ const { createdFiles } = await processFiles([imageBuffer], {
 
 ### AWS S3
 
-Resized images are streamed straight to S3 — no local staging — each with the
-correct `ContentType` for the output format.
+Each resized image is uploaded straight to S3 — no local staging — with the
+correct `ContentType` for the output format. (Each variant is fully buffered in
+memory, then uploaded; nothing is streamed incrementally.)
 
 ```javascript
 import { processFiles } from 'photonify';
