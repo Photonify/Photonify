@@ -1,5 +1,7 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
+import { PhotonifyError } from './errors';
+
 /**
  * Upload a single image buffer to S3. The caller owns the client's lifecycle
  * (creation and destruction) so it can be shared across many uploads.
@@ -12,11 +14,11 @@ export async function uploadFile(
   contentType?: string
 ): Promise<void> {
   if (!bucket) {
-    throw new Error('Photonify: S3 bucket is missing');
+    throw new PhotonifyError('Photonify: S3 bucket is missing');
   }
 
   if (!key || !body) {
-    throw new Error('Photonify: File body or key is missing');
+    throw new PhotonifyError('Photonify: File body or key is missing');
   }
 
   await client.send(

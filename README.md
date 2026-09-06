@@ -9,7 +9,8 @@
 
 Photonify processes image buffers into multiple resized variants in a single
 call. Given one or more input buffers and a set of named sizes, it resizes each
-image to every size, encodes the result to `jpg`, `png`, or `tiff`, and writes
+image to every size, encodes the result to `jpg`, `png`, `tiff`, `webp`, or
+`avif`, and writes
 the output to the local filesystem or uploads it directly to AWS S3. Each output
 is named `<uuid>-<sizeAlias>.<format>`, so filenames are unique across runs and
 safe to write without overwrite checks.
@@ -81,16 +82,18 @@ Resizes each input image into every configured size and stores the results.
 
 #### `Settings`
 
-| Option         | Type                                                                                  | Default         | Notes                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------- |
-| `storage`      | `'local' \| 's3'`                                                                     | `'local'`       | Where output is written.                                                                       |
-| `outputDest`   | `string`                                                                              | —               | **Required for local storage.** Directory to write to; created if it doesn't exist.            |
-| `outputFormat` | `'jpg' \| 'png' \| 'tiff'`                                                            | `'jpg'`         | Output encoding and file extension.                                                            |
-| `sizes`        | `Record<string, { width?: number; height?: number }>`                                 | `DEFAULT_SIZES` | Map of alias → dimensions. See [Sizes](#sizes) for alias and dimension rules.                  |
-| `fit`          | `'contain' \| 'cover' \| 'fill' \| 'inside' \| 'outside'`                             | `'cover'`       | How images fit the target box. See [sharp resize](https://sharp.pixelplumbing.com/api-resize). |
-| `concurrency`  | `number`                                                                              | `4`             | Max _(image × size)_ tasks in parallel. A positive integer, or `Infinity` for no limit.        |
-| `s3Config`     | [`S3ClientConfig`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) | —               | **Required for S3 storage.** Passed straight to the AWS SDK `S3Client`.                        |
-| `s3Bucket`     | `string`                                                                              | —               | **Required for S3 storage.** Destination bucket.                                               |
+| Option               | Type                                                                                  | Default             | Notes                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `storage`            | `'local' \| 's3'`                                                                     | `'local'`           | Where output is written. Any other value is rejected up front.                                         |
+| `outputDest`         | `string`                                                                              | —                   | **Required for local storage.** Directory to write to; created if it doesn't exist.                    |
+| `outputFormat`       | `'jpg' \| 'png' \| 'tiff' \| 'webp' \| 'avif'`                                        | `'jpg'`             | Output encoding and file extension.                                                                    |
+| `sizes`              | `Record<string, { width?: number; height?: number }>`                                 | 4 sizes (see below) | Map of alias → dimensions. See [Sizes](#sizes) for alias and dimension rules.                          |
+| `fit`                | `'contain' \| 'cover' \| 'fill' \| 'inside' \| 'outside'`                             | `'cover'`           | How images fit the target box. See [sharp resize](https://sharp.pixelplumbing.com/api-resize).         |
+| `withoutEnlargement` | `boolean`                                                                             | `false`             | When true, images smaller than a target size are left as-is instead of being upscaled to fill the box. |
+| `formatOptions`      | `FormatOptions`                                                                       | —                   | Encoder options passed to sharp for the chosen `outputFormat`, e.g. `{ quality: 90 }`.                 |
+| `concurrency`        | `number`                                                                              | `4`                 | Max _(image × size)_ tasks in parallel. A positive integer, or `Infinity` for no limit.                |
+| `s3Config`           | [`S3ClientConfig`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) | —                   | **Required for S3 storage.** Passed straight to the AWS SDK `S3Client`.                                |
+| `s3Bucket`           | `string`                                                                              | —                   | **Required for S3 storage.** Destination bucket.                                                       |
 
 #### Sizes
 
@@ -109,14 +112,15 @@ image into the box using `fit`.
 EXIF orientation is applied before resizing, so photos from phones and cameras
 come out upright. The orientation tag itself is not carried into the output.
 
-When `sizes` is omitted, these four are produced:
+When `sizes` is omitted, these four are produced. Each sets only a width, so the
+height is derived from the source aspect ratio (no cropping or stretching):
 
-| Alias | Width | Height |
-| ----- | ----- | ------ |
-| `xl`  | 1280  | 801    |
-| `lg`  | 1024  | 768    |
-| `md`  | 640   | 480    |
-| `sm`  | 160   | 144    |
+| Alias | Width | Height            |
+| ----- | ----- | ----------------- |
+| `xl`  | 1280  | from source ratio |
+| `lg`  | 1024  | from source ratio |
+| `md`  | 640   | from source ratio |
+| `sm`  | 320   | from source ratio |
 
 ### `removeFiles(fileNames, settings)`
 
@@ -125,7 +129,7 @@ Deletes objects from S3. Requests are automatically chunked into batches of
 any per-key deletion errors**.
 
 - **`fileNames`**: `string[]` — S3 object keys to delete _(required)_
-- **`settings`**: `{ storage: 's3', s3Config, s3Bucket }` _(all required)_
+- **`settings`**: `RemoveSettings` — `{ storage: 's3', s3Config, s3Bucket }` _(all required)_
 - **Returns**: `Promise<void>`
 
 > There is intentionally no local-filesystem delete support. Use Node's
@@ -212,37 +216,53 @@ await removeFiles(['file1.jpg', 'file2.jpg'], {
 
 ## Error handling
 
-`processFiles` and `removeFiles` reject rather than logging. On a processing
-failure, `processFiles` stops scheduling new work, waits for every in-flight
-task to finish, then best-effort removes everything the call produced (local
-files are unlinked; S3 objects are deleted with `DeleteObjects`). Cleanup
-failures are ignored, but note that if S3 itself is unreachable the rollback
-request goes through the AWS SDK's normal retry policy before the call
-rejects, so the rejection can be delayed by a few seconds. It then rejects
-with a `Photonify: Error processing images` error whose `cause` is the
-underlying error:
+`processFiles` and `removeFiles` reject rather than logging. Every rejection is
+a `PhotonifyError` (exported from the package), so you can branch on it with
+`instanceof` instead of matching the message string. When the failure
+originates elsewhere — a sharp decode error, an S3 transport error — the
+original is attached as `cause`.
+
+On a processing failure, `processFiles` stops scheduling new work, waits for
+every in-flight task to finish, then best-effort removes everything the call
+produced (local files are unlinked; S3 objects are deleted with
+`DeleteObjects`). Cleanup failures are ignored, and the S3 rollback is
+time-bounded (10s per `DeleteObjects` batch) so an S3 outage cannot add the AWS
+SDK's full retry latency before the caller sees the original failure. It then
+rejects with a
+`Photonify: Error processing images` error whose `cause` is the underlying
+error:
 
 ```javascript
+import { processFiles, PhotonifyError } from 'photonify';
+
 try {
   await processFiles([imageBuffer], { outputDest: './out' });
 } catch (err) {
-  console.error(err.message); // 'Photonify: Error processing images'
-  console.error(err.cause); // the original sharp/S3 error
+  if (err instanceof PhotonifyError) {
+    console.error(err.message); // 'Photonify: Error processing images'
+    console.error(err.cause); // the original sharp/S3 error
+  }
 }
 ```
 
 ## TypeScript
 
-Photonify ships its own type declarations. The main types are exported for reuse:
+Photonify ships its own type declarations. The public functions, the
+`PhotonifyError` class, and all the types are exported from the package root:
 
 ```typescript
-import { processFiles } from 'photonify';
+import { processFiles, removeFiles, PhotonifyError } from 'photonify';
 import type {
   Settings,
+  RemoveSettings,
   Sizes,
+  Size,
   Fit,
   SupportedFileTypes,
-} from 'photonify/dist/src/types';
+  FormatOptions,
+  Files,
+  ProcessResult,
+} from 'photonify';
 ```
 
 ## Photonify uses sharp

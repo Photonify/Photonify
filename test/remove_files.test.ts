@@ -2,11 +2,11 @@ import { expect } from 'chai';
 import { mockClient, AwsClientStub } from 'aws-sdk-client-mock';
 import { S3Client, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
-import { removeFiles } from '../src/index';
-import { Settings } from '../src/types';
+import { removeFiles, PhotonifyError } from '../src/index';
+import { RemoveSettings } from '../src/types';
 import { assertRejects } from './helpers';
 
-const validSettings: Partial<Settings> = {
+const validSettings: RemoveSettings = {
   storage: 's3',
   s3Config: { region: 'us-west-1' },
   s3Bucket: 'photonify',
@@ -30,16 +30,25 @@ describe('removeFiles', () => {
       expect(s3Mock.commandCalls(DeleteObjectsCommand)).to.have.lengthOf(0);
     });
 
+    // These pass deliberately-invalid settings to exercise the runtime guard
+    // for JavaScript callers, so they cast past the stricter RemoveSettings type.
     it('rejects when storage is not s3', async () => {
-      await assertRejects(
-        removeFiles(['a.jpg'], { ...validSettings, storage: 'local' }),
+      const error = await assertRejects(
+        removeFiles(['a.jpg'], {
+          ...validSettings,
+          storage: 'local',
+        } as unknown as RemoveSettings),
         'Storage must be set to S3'
       );
+      expect(error).to.be.instanceOf(PhotonifyError);
     });
 
     it('rejects when s3Config is missing', async () => {
       await assertRejects(
-        removeFiles(['a.jpg'], { storage: 's3', s3Bucket: 'photonify' }),
+        removeFiles(['a.jpg'], {
+          storage: 's3',
+          s3Bucket: 'photonify',
+        } as unknown as RemoveSettings),
         'Storage must be set to S3'
       );
     });
@@ -49,7 +58,7 @@ describe('removeFiles', () => {
         removeFiles(['a.jpg'], {
           storage: 's3',
           s3Config: { region: 'us-west-1' },
-        }),
+        } as unknown as RemoveSettings),
         'Storage must be set to S3'
       );
     });
@@ -63,6 +72,7 @@ describe('removeFiles', () => {
       expect(calls).to.have.lengthOf(1);
       const input = calls[0].args[0].input;
       expect(input.Bucket).to.equal('photonify');
+      expect(input.Delete?.Quiet).to.be.true;
       expect(input.Delete?.Objects).to.deep.equal([
         { Key: 'a.jpg' },
         { Key: 'b.jpg' },
@@ -92,11 +102,16 @@ describe('removeFiles', () => {
       );
     });
 
-    it('wraps and rethrows transport errors', async () => {
-      s3Mock.on(DeleteObjectsCommand).rejects(new Error('access denied'));
-      await assertRejects(
+    it('wraps and rethrows transport errors with the original as cause', async () => {
+      const transportError = new Error('access denied');
+      s3Mock.on(DeleteObjectsCommand).rejects(transportError);
+      const error = await assertRejects(
         removeFiles(['a.jpg'], validSettings),
-        'S3 delete error - access denied'
+        'S3 delete error'
+      );
+      expect(error).to.be.instanceOf(PhotonifyError);
+      expect((error as Error & { cause?: unknown }).cause).to.equal(
+        transportError
       );
     });
 
