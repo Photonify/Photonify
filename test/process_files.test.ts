@@ -9,7 +9,7 @@ import {
   DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 
-import { processFiles } from '../src/index';
+import { processFiles, PhotonifyError } from '../src/index';
 import { assertRejects, cleanGeneratedFiles } from './helpers';
 
 const IMAGES_DIR = path.join(__dirname, 'test_images');
@@ -132,6 +132,67 @@ describe('processFiles', () => {
         path.join(LOCAL_DEST, result.createdFiles[0])
       ).metadata();
       expect(meta.format).to.equal('png');
+    });
+
+    for (const format of ['tiff', 'webp', 'avif'] as const) {
+      it(`honors a custom output format (${format})`, async () => {
+        const result = await processFiles([readImage('first_image.jpg')], {
+          outputDest: LOCAL_DEST,
+          outputFormat: format,
+          sizes: { sm: { width: 40, height: 40 } },
+        });
+
+        expect(result.createdFiles[0]).to.match(new RegExp(`\\.${format}$`));
+        const meta = await sharp(
+          path.join(LOCAL_DEST, result.createdFiles[0])
+        ).metadata();
+        // sharp reports heif for avif-encoded output
+        expect(meta.format).to.equal(format === 'avif' ? 'heif' : format);
+      });
+    }
+
+    it('does not upscale small images when withoutEnlargement is set', async () => {
+      const small = await sharp({
+        create: { width: 50, height: 50, channels: 3, background: 'blue' },
+      })
+        .jpeg()
+        .toBuffer();
+
+      const result = await processFiles(small, {
+        outputDest: LOCAL_DEST,
+        withoutEnlargement: true,
+        sizes: { big: { width: 200 } },
+      });
+
+      const meta = await sharp(
+        path.join(LOCAL_DEST, result.createdFiles[0])
+      ).metadata();
+      // Requested width 200 but the source is only 50 wide, so it stays 50.
+      expect(meta.width).to.equal(50);
+    });
+
+    it('passes formatOptions through to the encoder (jpeg quality)', async () => {
+      const opts = {
+        outputDest: LOCAL_DEST,
+        outputFormat: 'jpg' as const,
+        sizes: { q: { width: 300, height: 300 } },
+      };
+      const low = await processFiles([readImage('first_image.jpg')], {
+        ...opts,
+        formatOptions: { quality: 20 },
+      });
+      const high = await processFiles([readImage('first_image.jpg')], {
+        ...opts,
+        formatOptions: { quality: 95 },
+      });
+
+      const lowSize = fs.statSync(
+        path.join(LOCAL_DEST, low.createdFiles[0])
+      ).size;
+      const highSize = fs.statSync(
+        path.join(LOCAL_DEST, high.createdFiles[0])
+      ).size;
+      expect(lowSize).to.be.lessThan(highSize);
     });
 
     it('creates the output directory if it does not exist', async () => {
@@ -291,6 +352,37 @@ describe('processFiles', () => {
       );
     });
 
+    it('rejects an unknown storage value', async () => {
+      await assertRejects(
+        processFiles([readImage('first_image.jpg')], {
+          storage: 'gcs' as unknown as 's3',
+          outputDest: LOCAL_DEST,
+        }),
+        'Unknown storage'
+      );
+    });
+
+    it('rejects a non-Buffer entry in files', async () => {
+      await assertRejects(
+        processFiles(['not a buffer' as unknown as Buffer], {
+          outputDest: LOCAL_DEST,
+        }),
+        'files[0] is not a Buffer'
+      );
+    });
+
+    it('throws a PhotonifyError for validation and processing failures', async () => {
+      const validationError = await assertRejects(
+        processFiles([readImage('first_image.jpg')], {})
+      );
+      expect(validationError).to.be.instanceOf(PhotonifyError);
+
+      const processingError = await assertRejects(
+        processFiles([Buffer.from('not an image')], { outputDest: LOCAL_DEST })
+      );
+      expect(processingError).to.be.instanceOf(PhotonifyError);
+    });
+
     it('rejects a size alias that could escape the output directory', async () => {
       for (const alias of ['../../escaped', 'a/b', 'a\\b', 'with space', '']) {
         await assertRejects(
@@ -396,6 +488,18 @@ describe('processFiles', () => {
       expect(input.Key).to.match(/^[a-f0-9]{32}-sm\.png$/);
       expect(input.ContentType).to.equal('image/png');
       expect(input.Body).to.be.instanceOf(Buffer);
+    });
+
+    it('sends the correct content type for webp output', async () => {
+      await processFiles([readImage('first_image.jpg')], {
+        ...s3Settings,
+        outputFormat: 'webp',
+        sizes: { sm: { width: 80, height: 80 } },
+      });
+
+      const input = s3Mock.commandCalls(PutObjectCommand)[0].args[0].input;
+      expect(input.Key).to.match(/\.webp$/);
+      expect(input.ContentType).to.equal('image/webp');
     });
 
     it('surfaces upload failures', async () => {

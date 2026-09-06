@@ -1,18 +1,19 @@
 import { DeleteObjectsCommand, S3Client } from '@aws-sdk/client-s3';
 
-import { Settings } from './types';
+import { RemoveSettings } from './types';
 import { S3_MAX_DELETE_KEYS } from './constants';
+import { PhotonifyError } from './errors';
 
 export async function removeFiles(
   fileNames: string[],
-  settings: Partial<Settings>
+  settings: RemoveSettings
 ): Promise<void> {
   if (!fileNames || fileNames.length === 0) {
     return;
   }
 
   if (settings.storage !== 's3' || !settings.s3Config || !settings.s3Bucket) {
-    throw new Error(
+    throw new PhotonifyError(
       'Photonify: Storage must be set to S3 and have s3Config and s3Bucket configured.'
     );
   }
@@ -27,7 +28,9 @@ export async function removeFiles(
       const response = await client.send(
         new DeleteObjectsCommand({
           Bucket: settings.s3Bucket,
-          Delete: { Objects: batch.map(Key => ({ Key })) },
+          // Quiet omits the (large) list of successfully deleted keys from the
+          // response; only per-key Errors come back, which is all we inspect.
+          Delete: { Objects: batch.map(Key => ({ Key })), Quiet: true },
         })
       );
 
@@ -37,18 +40,18 @@ export async function removeFiles(
         const details = response.Errors.map(
           err => `${err.Key} (${err.Message})`
         ).join(', ');
-        throw new Error(`Photonify: S3 delete failed for - ${details}`);
+        throw new PhotonifyError(
+          `Photonify: S3 delete failed for - ${details}`
+        );
       }
     }
   } catch (error) {
-    if (error instanceof Error) {
-      // Pass our own errors through untouched; wrap transport/SDK errors.
-      if (error.message.startsWith('Photonify:')) {
-        throw error;
-      }
-      throw new Error(`Photonify: S3 delete error - ${error.message}`);
+    // Pass our own errors through untouched; wrap transport/SDK errors with the
+    // original attached as `cause`.
+    if (error instanceof PhotonifyError) {
+      throw error;
     }
-    throw new Error('Photonify: S3 delete error - Unknown error occurred');
+    throw new PhotonifyError('Photonify: S3 delete error', { cause: error });
   } finally {
     client.destroy();
   }
