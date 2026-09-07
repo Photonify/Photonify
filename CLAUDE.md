@@ -13,8 +13,6 @@ and the public types — all re-exported from `src/index.ts`:
 - `removeFiles(fileNames, settings)` — `src/remove_files.ts`
 - `PhotonifyError` — `src/errors.ts` (every rejection is one; the underlying error is on `cause`)
 
-The prioritized code-review backlog (open work, ordered by priority) lives in [GitHub issue #9](https://github.com/Photonify/Photonify/issues/9).
-
 ## Commands
 
 Node version is pinned to `22.16.0` (`.nvmrc`); package manager is Yarn classic (1.22.x, pinned via the `packageManager` field). The published package's runtime floor is Node `>=20.9.0` (`engines`); the newer dev pin is required by the ESLint 10 toolchain.
